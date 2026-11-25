@@ -2,15 +2,17 @@
 import type { AppData, ClassRoom, FullState, Notice, Runtime, Schedule, ScheduleLogEntry, SeatLayout, SeatingResult, StudentView, TimerDisplayMode } from '../shared/types';
 import { newClass } from '../shared/defaults';
 import { displayNames, isAway, mergeRoster, parseRosterText, MAX_STUDENTS } from '../shared/roster';
-import { activeSeats, cleanGroups, cleanLayout, cycleGender, disabledKey, disabledList, drawSeating, FIXED_ISSUE_TEXT, genderKey, genderPattern, type GenderPattern, precheckSeating, reconcileAssignment, seatExists, seatLabel, setFixed, suggestLayout, validateFixed } from '../shared/seating';
+import { resultProblems, activeSeats, cleanGroups, cleanLayout, cycleGender, disabledKey, disabledList, drawSeating, FIXED_ISSUE_TEXT, genderKey, genderPattern, type GenderPattern, precheckSeating, reconcileAssignment, seatExists, seatLabel, setFixed, suggestLayout, validateFixed } from '../shared/seating';
 import { eligibleStudents, pickStudents } from '../shared/picker';
-import { evaluateTick, findConflicts, validateSchedule } from '../shared/schedule';
+import { evaluateTick, findConflicts, keyToMs, validateSchedule } from '../shared/schedule';
 import { idleTimer, normalizeWarnFrom, pauseTimer, pendingAlerts, remainingMs, resetTimer, resumeTimer, setTimerMode, startTimer, tickTimer } from '../shared/timer';
 import { buildStudentView } from '../shared/studentView';
 import { clamp, formatClock, formatDateTimeKo, localDateKey, newId } from '../shared/util';
 
 export interface Ports {
   persist(data: AppData): void;
+  /** 지금 바로 디스크에 저장 (예약 실행 기록처럼 잃으면 안 되는 것) */
+  persistNow(data: AppData): void;
   /** 학생 화면 표시 요청. inactive=true면 포커스를 빼앗지 않음. 표시하지 못하면 false */
   showStudent(opts: { inactive: boolean; reason: 'teacher' | 'schedule' | 'timer' }): boolean;
   hideStudent(): void;
@@ -127,24 +129,50 @@ export class Controller {
   checkSchedules(now = this.now()): void {
     let last = this.data.lastScheduleCheckAt || now - 1000;
     if (last > now) last = now - 1000; // 시계가 뒤로 바뀐 경우
+    // PC 시각이 미래로 잘못 갔다가 돌아오면, 아직 오지 않은 시각의 처리 기록이 오늘 예약을 막는다 → 정리
+    let dirty = false;
+    for (const [id, key] of Object.entries(this.data.scheduleFired)) {
+      if (keyToMs(key) > now + 60_000) {
+        delete this.data.scheduleFired[id];
+        dirty = true;
+      }
+    }
+    if (dirty) this.log('info', 'PC 시각이 앞당겨졌다가 돌아온 것 같아, 아직 오지 않은 시각의 예약 처리 기록을 정리했습니다.');
     const res = evaluateTick(this.data.schedules, this.data.scheduleFired, last, now);
     this.data.lastScheduleCheckAt = now;
-    let dirty = false;
     for (const m of res.missed) {
       this.data.scheduleFired[m.schedule.id] = m.key;
       this.log('missed', `‘${m.schedule.name}’ 예약(${formatDateTimeKo(m.at)})을 놓쳤습니다. 앱이 꺼져 있었거나 PC가 절전 상태였습니다.`, { scheduleId: m.schedule.id, occurrence: m.key });
       if (m.schedule.repeat === 'once') m.schedule.enabled = false;
       dirty = true;
     }
+    // 실행 기록을 학생 화면을 띄우기 전에 디스크에 먼저 저장한다.
+    // (실행 직후 앱이 비정상 종료되어도 다시 켰을 때 같은 예약이 또 실행되지 않음.
+    //  대신 저장 직후·표시 전에 종료되면 그 회차는 실행되지 않은 채 남는다: 중복보다 누락을 택함)
     for (const d of res.due) {
       this.data.scheduleFired[d.schedule.id] = d.key;
       if (d.schedule.repeat === 'once') d.schedule.enabled = false;
+    }
+    if (res.due.length) this.ports.persistNow(this.data);
+    for (const d of res.due) {
       this.fireSchedule(d.schedule, d.key);
       dirty = true;
     }
     // lastScheduleCheckAt는 자주 바뀌므로 다른 변경이 있을 때나 1분마다만 저장
     if (dirty) this.changed(true);
     else if (Math.floor(now / 60000) !== Math.floor(last / 60000)) this.ports.persist(this.data);
+  }
+
+  /**
+   * PC 시계가 바뀌었을 때(절전 아님): 진행 중 타이머의 종료 시각을 같이 옮겨 남은 시간을 그대로 유지한다.
+   * deltaMs = (벽시계 변화) - (실제 흐른 시간)
+   */
+  onClockJump(deltaMs: number): void {
+    const t = this.rt.timer;
+    if (t.status === 'running') {
+      this.rt.timer = { ...t, endAt: t.endAt + deltaMs };
+      this.changed(false);
+    }
   }
 
   fireSchedule(s: Schedule, key: string): void {
@@ -534,6 +562,8 @@ export class Controller {
       case 'seating/reveal': {
         const d = c.seating.draft;
         if (!d) return { ok: false, error: '먼저 자리를 추첨해 주세요.' };
+        const bad = this.draftProblems(c);
+        if (bad.length) return { ok: false, error: '미리 추첨한 뒤 명단이나 자리 조건이 바뀌어 이 결과를 공개할 수 없습니다. 다시 추첨해 주세요.\n' + bad.join('\n') };
         this.revealSeating(c, d);
         return;
       }
@@ -543,6 +573,8 @@ export class Controller {
       case 'seating/confirm': {
         const d = c.seating.draft;
         if (!d) return { ok: false, error: '확정할 배치가 없습니다.' };
+        const bad = this.draftProblems(c);
+        if (bad.length) return { ok: false, error: '미리 추첨한 뒤 명단이나 자리 조건이 바뀌어 이 결과를 확정할 수 없습니다. 다시 추첨해 주세요.\n' + bad.join('\n') };
         c.seating.confirmed = structuredClone(d);
         return;
       }
@@ -755,6 +787,13 @@ export class Controller {
     const l = c.seating.layout;
     const cap = (l.type === 'pair' ? l.pairCols * 2 : l.cols) * l.rows;
     if (cap < n) c.seating.layout = { ...suggestLayout(n, l.type, l) };
+  }
+
+  /** 미리 추첨한 결과가 지금 명단·조건과 맞지 않는 이유 */
+  draftProblems(c: ClassRoom): string[] {
+    const d = c.seating.draft;
+    if (!d) return [];
+    return resultProblems(d, { layout: c.seating.layout, students: c.students, fixed: c.seating.fixed, excludeAway: c.seating.excludeAway, today: this.today });
   }
 
   fixedIssueTexts(c: ClassRoom): string[] {

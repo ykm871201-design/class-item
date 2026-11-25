@@ -407,17 +407,28 @@ function Memo({ id, title, text, color }: { id: string; title: string; text: str
   const [t, setT] = useState(text);
   const [h, setH] = useState(title);
   const timer = useRef<number | undefined>(undefined);
+  const pending = useRef<{ text?: string; title?: string }>({});
   const [menu, setMenu] = useState(false);
   useEffect(() => setT(text), [text]);
   useEffect(() => setH(title), [title]);
-  const save = (patch: { text?: string; title?: string }) => {
+  // 제목과 본문을 번갈아 고쳐도 둘 다 저장되도록 바뀐 내용을 합쳐서 보냄
+  const flush = () => {
     window.clearTimeout(timer.current);
-    timer.current = window.setTimeout(() => act('widget/memoUpdate', { id, patch }), 400);
+    timer.current = undefined;
+    const patch = pending.current;
+    pending.current = {};
+    if (Object.keys(patch).length) act('widget/memoUpdate', { id, patch });
   };
+  const save = (patch: { text?: string; title?: string }) => {
+    pending.current = { ...pending.current, ...patch };
+    window.clearTimeout(timer.current);
+    timer.current = window.setTimeout(flush, 400);
+  };
+  useEffect(() => () => flush(), []); // 메모가 사라지거나 위젯이 닫힐 때 남은 변경 저장
   return (
     <div className="memo" style={{ background: color }}>
       <div className="memo-head">
-        <input className="memo-title" placeholder="제목" value={h} onChange={(e) => { setH(e.target.value); save({ title: e.target.value }); }} />
+        <input className="memo-title" placeholder="제목" value={h} onChange={(e) => { setH(e.target.value); save({ title: e.target.value }); }} onBlur={flush} />
         <button className="wc-icon" onClick={() => setMenu(!menu)} title="색·지우기">
           ⋯
         </button>
@@ -432,7 +443,7 @@ function Memo({ id, title, text, color }: { id: string; title: string; text: str
           </button>
         </div>
       )}
-      <textarea className="memo-text" value={t} placeholder="메모" onChange={(e) => { setT(e.target.value); save({ text: e.target.value }); }} />
+      <textarea className="memo-text" value={t} placeholder="메모" onChange={(e) => { setT(e.target.value); save({ text: e.target.value }); }} onBlur={flush} />
     </div>
   );
 }

@@ -67,9 +67,16 @@ export class Updater {
   async install(): Promise<{ ok: boolean; error?: string }> {
     if (this.busy) return { ok: false, error: '이미 진행 중입니다.' };
     if (this.ctl.rt.update.status !== 'available' || !this.asset) return { ok: false, error: '설치할 새 버전이 없습니다. 먼저 업데이트를 확인해 주세요.' };
+    // 기대 해시(SHA-256)가 없으면 내려받은 파일을 검증할 수 없으므로 설치하지 않는다
+    const expected = /^sha256:([0-9a-f]{64})$/i.exec(this.asset.digest ?? '')?.[1]?.toLowerCase();
+    if (!expected) {
+      this.log('업데이트 중단: 릴리스에 SHA-256 해시가 없음');
+      return { ok: false, error: '새 버전 파일의 검증 정보(SHA-256)가 없어 안전하게 설치할 수 없습니다. 잠시 뒤 다시 확인하거나 GitHub에서 직접 내려받아 주세요.' };
+    }
     if (process.platform !== 'win32' && !process.env.CT_UPDATE_NO_INSTALL) return { ok: false, error: 'Windows에서만 자동 업데이트할 수 있습니다.' };
     this.busy = true;
     const asset = this.asset;
+    let verified = false;
     try {
       const dir = path.join(app.getPath('temp'), 'ClassroomTools-Update');
       fs.mkdirSync(dir, { recursive: true });
@@ -80,36 +87,53 @@ export class Updater {
       if (!res.ok || !res.body) throw new Error(`다운로드 실패 (${res.status})`);
       const total = Number(res.headers.get('content-length')) || asset.size;
       const hash = crypto.createHash('sha256');
-      const out = fs.createWriteStream(file);
       const reader = res.body.getReader();
       let got = 0;
       let lastSent = 0;
-      for (;;) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        got += value.length;
-        hash.update(value);
-        if (!out.write(Buffer.from(value))) await new Promise((r) => out.once('drain', r));
-        const now = Date.now();
-        if (now - lastSent > 250) {
-          lastSent = now;
-          this.set({ progress: total ? got / total : 0 });
+      // 파일 쓰기 오류가 이벤트로 새지 않도록 promise 기반 파일 핸들 사용
+      const fh = await fs.promises.open(file, 'w');
+      try {
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          got += value.length;
+          hash.update(value);
+          await fh.write(value);
+          const now = Date.now();
+          if (now - lastSent > 250) {
+            lastSent = now;
+            this.set({ progress: total ? got / total : 0 });
+          }
         }
+      } catch (e) {
+        reader.cancel().catch(() => {});
+        throw e;
+      } finally {
+        await fh.close();
       }
-      await new Promise<void>((resolve, reject) => out.end((err?: Error | null) => (err ? reject(err) : resolve())));
       if (asset.size && got !== asset.size) throw new Error(`파일 크기가 맞지 않습니다 (${got}/${asset.size}).`);
       const sha = hash.digest('hex');
-      if (asset.digest && asset.digest.startsWith('sha256:') && asset.digest.slice(7) !== sha) throw new Error('내려받은 파일이 손상되었습니다 (검증 실패).');
+      if (sha !== expected) throw new Error('내려받은 파일이 손상되었습니다 (검증 실패).');
+      verified = true;
       this.downloadedPath = file;
       this.set({ status: 'installing', progress: 1 });
       this.log(`업데이트 파일 검증 완료 (sha256 ${sha.slice(0, 12)}…), 설치 시작`);
       if (process.env.CT_UPDATE_NO_INSTALL) return { ok: true }; // 테스트용: 실제 설치는 하지 않음
       // NSIS 조용한 설치(/S) 후 앱 다시 실행(--force-run). 설치 중 기존 앱은 종료된다.
-      const child = spawn(file, ['/S', '--force-run'], { detached: true, stdio: 'ignore' });
-      child.unref();
+      // 설치 프로그램이 실제로 시작된 경우에만 앱을 끈다 (실행 실패 시 앱이 그냥 꺼지지 않게)
+      await new Promise<void>((resolve, reject) => {
+        const child = spawn(file, ['/S', '--force-run'], { detached: true, stdio: 'ignore' });
+        child.once('error', reject);
+        child.once('spawn', () => {
+          child.unref();
+          resolve();
+        });
+      });
       setTimeout(() => this.quitForInstall(), 1500);
       return { ok: true };
     } catch (e: any) {
+      // 검증을 통과하지 못한 내려받은 파일은 남기지 않는다
+      if (!verified) fs.promises.rm(path.join(app.getPath('temp'), 'ClassroomTools-Update', asset.name), { force: true }).catch(() => {});
       const msg = e?.message?.includes('net::') ? '인터넷 연결이 끊겼습니다.' : e?.message ?? String(e);
       this.log(`업데이트 실패: ${msg}`);
       this.set({ status: 'available', error: `업데이트하지 못했습니다: ${msg}`, progress: undefined });

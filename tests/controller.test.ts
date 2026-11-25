@@ -6,6 +6,7 @@ function make() {
   const shown: string[] = [];
   const ports: Ports = {
     persist: () => {},
+    persistNow: () => {},
     showStudent: () => (shown.push('show'), true),
     hideStudent: () => {},
     applyTopmost: () => {},

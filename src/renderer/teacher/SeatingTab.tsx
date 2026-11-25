@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { ClassRoom, DeskGroup, LayoutType, SeatLayout } from '../../shared/types';
-import { activeSeats, allSeats, columnGaps, disabledList, genderMap, groupOfColumn, layoutEquals, precheckSeating, seatColumns, seatLabel, shortSeatLabel, totalRows, validateFixed, FIXED_ISSUE_TEXT, GENDER_PATTERN_TEXT, GENDER_TEXT, LIMITS, type GenderPattern } from '../../shared/seating';
+import { resultProblems, activeSeats, allSeats, columnGaps, disabledList, genderMap, groupOfColumn, layoutEquals, precheckSeating, seatColumns, seatLabel, shortSeatLabel, totalRows, validateFixed, FIXED_ISSUE_TEXT, GENDER_PATTERN_TEXT, GENDER_TEXT, LIMITS, type GenderPattern } from '../../shared/seating';
 import { awayLabel, displayNames } from '../../shared/roster';
 import { formatDateTimeKo, localDateKey } from '../../shared/util';
 import { seatGridTemplate } from '../common/StudentScreen';
@@ -28,6 +28,8 @@ export function SeatingTab() {
   const resultMatches = !!result && layoutEquals(result.layout, layout);
   const revealedNow = studentView.base === 'seating' && runtime.seatingReveal?.classId === cls.id;
   const revealedIsDraft = revealedNow && cfg.draft && runtime.seatingReveal && JSON.stringify(runtime.seatingReveal.result.assignment) === JSON.stringify(cfg.draft.assignment);
+  // 미리 추첨한 결과가 지금 명단·조건과 맞는지 (메인 프로세스도 확정·공개 때 같은 검사를 한다)
+  const draftProblems = cfg.draft ? resultProblems(cfg.draft, { layout, students: cls.students, fixed: cfg.fixed, excludeAway: cfg.excludeAway, today }) : [];
   const animating = revealedNow && runtime.seatingReveal?.animate && runtime.now - (runtime.seatingReveal?.startedAt ?? 0) < 3000;
 
   const setLayout = async (p: Partial<SeatLayout>) => {
@@ -274,11 +276,17 @@ export function SeatingTab() {
 
       <div className="card">
         <h2>추첨과 공개</h2>
+        {draftProblems.length > 0 && (
+          <div className="alert warn" data-testid="draft-stale">
+            미리 추첨한 뒤 명단이나 자리 조건이 바뀌어 이 결과는 공개·확정할 수 없습니다. ‘다시 섞기’나 ‘미리 추첨’으로 새로 뽑아 주세요.
+            {'\n' + draftProblems.map((x) => '· ' + x).join('\n')}
+          </div>
+        )}
         <div className="row">
           <button className="btn huge" onClick={() => draw(false)} disabled={!!pre.error} data-testid="seat-draw-preview">
             미리 추첨 (교사만 보기)
           </button>
-          <button className="btn huge primary" onClick={() => act('seating/reveal')} disabled={!cfg.draft} data-testid="seat-reveal">
+          <button className="btn huge primary" onClick={() => act('seating/reveal')} disabled={!cfg.draft || draftProblems.length > 0} data-testid="seat-reveal">
             학생 화면에 공개
           </button>
           <button className="btn huge primary" onClick={() => draw(true)} disabled={!!pre.error} data-testid="seat-draw-reveal">
@@ -292,7 +300,7 @@ export function SeatingTab() {
           <button className="btn big" onClick={() => act('seating/skip')} disabled={!animating}>
             ⏭ 연출 건너뛰기
           </button>
-          <button className="btn big ok" disabled={!cfg.draft || !layoutEquals(cfg.draft.layout, layout)} onClick={() => act('seating/confirm', {}, '배치를 확정했습니다.')} data-testid="seat-confirm">
+          <button className="btn big ok" disabled={!cfg.draft || draftProblems.length > 0} onClick={() => act('seating/confirm', {}, '배치를 확정했습니다.')} data-testid="seat-confirm">
             ✔ 이 배치로 확정
           </button>
           {cfg.confirmed && <span className="small muted">확정: {formatDateTimeKo(cfg.confirmed.createdAt)}</span>}

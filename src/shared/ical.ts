@@ -284,7 +284,8 @@ function buildEvent(props: RawProp[]): VEvent | null {
     exdates,
     recurrenceId: rid ? parseTime(rid)?.ms ?? null : null,
     cancelled: (get('STATUS')?.value ?? '').toUpperCase() === 'CANCELLED',
-    tzid: ds.params.TZID,
+    // TZID가 없고 'Z'(UTC)로 끝나면 반복 규칙(BYDAY 등)을 UTC 기준으로 계산해야 한다 (RFC 5545)
+    tzid: ds.params.TZID ?? (/Z$/i.test(ds.value.trim()) ? 'UTC' : undefined),
   };
 }
 

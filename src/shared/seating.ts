@@ -541,3 +541,37 @@ export function toCustomGroups(l: SeatLayout): DeskGroup[] {
   }
   return l.groups;
 }
+
+/**
+ * 이미 뽑아 둔 배치(미리 추첨·저장한 배치)가 지금 명단·조건에 그대로 맞는지 확인.
+ * 맞지 않는 이유 목록을 돌려준다 (비어 있으면 확정·공개해도 됨).
+ * 추첨 뒤 학생 추가·삭제, 결석 처리, 자리 모양·고정·남녀 자리 변경을 잡아낸다.
+ */
+export function resultProblems(result: { layout: SeatLayout; assignment: Assignment }, input: Omit<DrawInput, 'rand' | 'emptyPolicy'>): string[] {
+  const out: string[] = [];
+  const name = (id: string) => input.students.find((s) => s.id === id)?.name ?? '(삭제된 학생)';
+  if (!layoutEquals(result.layout, input.layout)) out.push('자리 모양(줄·열·분단·사용 안 함 자리)이 바뀌었습니다.');
+  const seats = activeSeats(input.layout).map((s) => s.id);
+  const participants = input.students.filter((s) => !(input.excludeAway && isAway(s, input.today)));
+  const pids = new Set(participants.map((s) => s.id));
+  const assigned = Object.values(result.assignment);
+  const gone = assigned.filter((id) => !pids.has(id));
+  if (gone.length) out.push(`배치에 결석·제외되었거나 삭제된 학생이 있습니다: ${gone.map(name).join(', ')}`);
+  const seated = new Set(assigned);
+  const missing = participants.filter((s) => !seated.has(s.id));
+  if (missing.length) out.push(`자리가 없는 학생이 있습니다: ${missing.map((s) => s.name).join(', ')}`);
+  if (!out.length) {
+    const v = verifyAssignment(result.assignment, participants.map((s) => s.id), seats);
+    if (v) out.push(v);
+  }
+  const issues = new Set(validateFixed(input.layout, input.students, input.fixed).map((i) => `${i.seatId}|${i.studentId}`));
+  const applied = input.fixed.filter((f) => !issues.has(`${f.seatId}|${f.studentId}`) && pids.has(f.studentId));
+  const wrongFixed = applied.filter((f) => result.assignment[f.seatId] !== f.studentId);
+  if (wrongFixed.length) out.push(`고정 자리 설정과 다릅니다: ${wrongFixed.map((f) => name(f.studentId)).join(', ')}`);
+  const gmap = genderMap(input.layout);
+  const fixedSeats = new Set(applied.map((f) => f.seatId));
+  const genderOf = new Map(input.students.map((s) => [s.id, s.gender ?? null]));
+  const wrongGender = Object.entries(result.assignment).filter(([seat, sid]) => gmap[seat] && !fixedSeats.has(seat) && genderOf.get(sid) !== gmap[seat]);
+  if (wrongGender.length) out.push(`남자·여자 자리 설정과 다릅니다: ${wrongGender.map(([, sid]) => name(sid)).join(', ')}`);
+  return out;
+}

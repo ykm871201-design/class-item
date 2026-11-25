@@ -344,10 +344,23 @@ function showTeacher(): void {
 }
 
 function quitApp(): void {
+  if (ctl) store.save(ctl.data);
+  // 저장에 실패하면 그냥 끄지 않고 묻는다 (명단·설정을 잃지 않게)
+  if (!store.flush()) {
+    const r = dialog.showMessageBoxSync({
+      type: 'warning',
+      title: '교실 도구',
+      message: '데이터를 저장하지 못했습니다.',
+      detail: `${store.status.error ?? ''}\n\n지금 종료하면 마지막 변경 내용이 저장되지 않을 수 있습니다. 디스크 공간과 저장 폴더(%APPDATA%\\ClassroomTools)를 확인해 주세요.`,
+      buttons: ['종료하지 않기', '그래도 종료'],
+      defaultId: 0,
+      cancelId: 0,
+      noLink: true,
+    });
+    if (r === 0) return;
+  }
   quitting = true;
   diag('앱 완전 종료');
-  if (ctl) store.save(ctl.data);
-  store.flush();
   app.quit();
 }
 
@@ -376,6 +389,10 @@ function init(): void {
   const data = store.load();
   const ports: Ports = {
     persist: (d) => store.save(d),
+    persistNow: (d) => {
+      store.save(d);
+      store.flush();
+    },
     // 학생 창은 키보드 입력이 필요 없으므로 항상 포커스를 빼앗지 않고 표시한다
     showStudent: () => student.show(true),
     hideStudent: () => student.hide(),
@@ -404,7 +421,18 @@ function init(): void {
     diag(`[예약 ${kind}] ${message}`);
     origLog(kind, message, extra);
   };
-  if (store.loadWarning) ctl.notice('warn', store.loadWarning);
+  if (store.loadWarning) {
+    ctl.notice('warn', store.loadWarning);
+    diag(store.loadWarning);
+  }
+  // 저장 실패·복구를 교사 화면에 알림
+  store.onStatus = (st) => {
+    if (!st.ok) {
+      ctl.notice('error', st.error ?? '데이터를 저장하지 못했습니다.');
+      diag(st.error ?? '저장 실패');
+    } else ctl.notice('info', '데이터 저장이 다시 정상으로 돌아왔습니다.');
+    ctl.changed(false);
+  };
   store.save(ctl.data); // 처음 실행 시에도 저장 파일을 바로 만든다
 
   // 자동 실행 설정을 OS 상태와 맞춤
@@ -433,14 +461,28 @@ function init(): void {
   // 창이 숨겨져 있어도 Windows가 백그라운드 앱을 일시 중단·지연시키지 않게 한다 (화면 꺼짐·절전은 막지 않음)
   powerSaveBlocker.start('prevent-app-suspension');
   let lastTick = Date.now();
+  // PC 시계 변경 감지: 벽시계(Date.now)와 실제로 흐른 시간(performance.now, 시계 변경 영향 없음)을 비교
+  let lastMono = performance.now();
+  let suspended = false;
   setInterval(() => {
     const now = Date.now();
-    if (now - lastTick > 30_000) diag(`예약 감시가 ${Math.round((now - lastTick) / 1000)}초 동안 멈춰 있었습니다 (절전·일시 중단 추정)`);
+    const mono = performance.now();
+    const drift = now - lastTick - (mono - lastMono);
+    if (!suspended && Math.abs(drift) > 2000) {
+      diag(`PC 시계가 ${Math.round(drift / 1000)}초 바뀌었습니다 → 진행 중 타이머의 남은 시간을 그대로 유지`);
+      ctl.onClockJump(drift);
+    } else if (now - lastTick > 30_000) diag(`예약 감시가 ${Math.round((now - lastTick) / 1000)}초 동안 멈춰 있었습니다 (절전·일시 중단 추정)`);
+    suspended = false;
     lastTick = now;
+    lastMono = mono;
     ctl.tick();
   }, 250);
-  powerMonitor.on('suspend', () => diag('PC 절전 진입'));
+  powerMonitor.on('suspend', () => {
+    suspended = true; // 절전 동안 흐른 시간은 시계 변경이 아님
+    diag('PC 절전 진입');
+  });
   powerMonitor.on('resume', () => {
+    suspended = true;
     diag('PC 절전 복귀');
     ctl.checkSchedules();
   });
@@ -483,22 +525,42 @@ app.on('before-quit', () => {
   store?.flush();
 });
 app.on('will-quit', () => globalShortcut.unregisterAll());
+// 모든 창: 다른 페이지로 이동·새 창 열기 금지 (앱은 로컬 화면만 쓴다. 외부 링크는 위젯 창에서 기본 브라우저로)
+app.on('web-contents-created', (_e, wc) => {
+  wc.on('will-navigate', (ev) => ev.preventDefault());
+  wc.setWindowOpenHandler(() => ({ action: 'deny' }));
+});
 app.on('window-all-closed', () => {
   /* 알림 영역에서 계속 실행 */
 });
 
 // ---------------- IPC ----------------
+/** 교사용 창·위젯 창에서 온 요청인지 (학생 창이나 다른 곳에서 온 요청은 거부) */
+function fromTeacher(e: Electron.IpcMainInvokeEvent): boolean {
+  const s = e.sender;
+  return (!!teacherWin && !teacherWin.isDestroyed() && s === teacherWin.webContents) || (!!widget?.win && !widget.win.isDestroyed() && s === widget.win.webContents);
+}
+function fromStudent(e: Electron.IpcMainInvokeEvent): boolean {
+  return !!student.win && !student.win.isDestroyed() && e.sender === student.win.webContents;
+}
+function guard<A extends unknown[], R>(check: (e: Electron.IpcMainInvokeEvent) => boolean, fn: (e: Electron.IpcMainInvokeEvent, ...a: A) => R) {
+  return (e: Electron.IpcMainInvokeEvent, ...a: A): R => {
+    if (!check(e)) throw new Error('허용되지 않은 요청입니다.');
+    return fn(e, ...a);
+  };
+}
+
 function registerIpc(): void {
-  ipcMain.handle('state:get', () => ctl.fullState());
-  ipcMain.handle('student:getView', () => ctl.studentView());
+  ipcMain.handle('state:get', guard(fromTeacher, () => ctl.fullState()));
+  ipcMain.handle('student:getView', guard((e) => fromStudent(e) || fromTeacher(e), () => ctl.studentView()));
   // 학생 화면 안에서 받은 Esc (before-input-event로 처리되지 않은 경우의 보조 경로)
-  ipcMain.handle('student:escape', () => student.escape());
-  ipcMain.handle('dispatch', (_e, action) => ctl.dispatch(action));
-  ipcMain.handle('dialog:confirm', async (_e, { message, detail, ok, cancel }) => {
+  ipcMain.handle('student:escape', guard(fromStudent, () => student.escape()));
+  ipcMain.handle('dispatch', guard(fromTeacher, (_e, action) => ctl.dispatch(action)));
+  ipcMain.handle('dialog:confirm', guard(fromTeacher, async (_e, { message, detail, ok, cancel }) => {
     const r = await dialog.showMessageBox(teacherWin!, { type: 'question', title: '교실 도구', message, detail, buttons: [ok ?? '확인', cancel ?? '취소'], defaultId: 0, cancelId: 1, noLink: true });
     return r.response === 0;
-  });
-  ipcMain.handle('app', async (_e, a: { type: string; [k: string]: any }) => {
+  }));
+  ipcMain.handle('app', guard(fromTeacher, async (_e, a: { type: string; [k: string]: any }) => {
     switch (a.type) {
       case 'quit':
         quitApp();
@@ -640,5 +702,5 @@ function registerIpc(): void {
       }
     }
     return { ok: false, error: 'unknown' };
-  });
+  }));
 }

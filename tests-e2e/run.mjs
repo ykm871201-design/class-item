@@ -228,6 +228,21 @@ await check('교사 미리 추첨은 학생 화면에 보이지 않고, 공개�
   assert(shown.includes(names[draft.r0c1].replace(/\(.*/, '')) || shown.some((t) => t.startsWith(names[draft.r0c1])), '공개된 배치가 미리 추첨 결과와 다름');
 });
 
+await check('미리 추첨 뒤 학생을 추가하면 공개·확정 버튼이 막히고 이유를 보여 줌', async () => {
+  await teacher.click('[data-tab=seating]');
+  await teacher.click('[data-testid=seat-draw-preview]');
+  await sleep(300);
+  assert(await teacher.isEnabled('[data-testid=seat-reveal]'), '추첨 직후 공개 버튼이 꺼져 있음');
+  await dispatch(app, { type: 'student/add', name: '전학생' });
+  await teacher.waitForSelector('[data-testid=draft-stale]', { timeout: 3000 });
+  assert((await teacher.textContent('[data-testid=draft-stale]')).includes('전학생'), '이유에 학생 이름이 없음');
+  assert(!(await teacher.isEnabled('[data-testid=seat-reveal]')) && !(await teacher.isEnabled('[data-testid=seat-confirm]')), '버튼이 막히지 않음');
+  const r = await dispatch(app, { type: 'seating/confirm' });
+  assert(!r.ok, '메인 프로세스에서도 막혀야 함');
+  const id = await app.evaluate(() => globalThis.__ct.ctl.cls.students.find((s) => s.name === '전학생').id);
+  await dispatch(app, { type: 'student/delete', id });
+});
+
 await check('고정 학생 결석 → 다시 섞기 시 제외, 고정 설정은 유지', async () => {
   const id = await app.evaluate(() => globalThis.__ct.ctl.cls.students.find((s) => s.name === '최유나').id);
   await dispatch(app, { type: 'student/update', id, absent: true });
@@ -543,6 +558,12 @@ await check('업데이트: 새 버전 확인 → 내려받기·무결성 검증 
   await app.evaluate(() => globalThis.__ct.updater.check(false));
   const bad = await app.evaluate(() => globalThis.__ct.updater.install());
   assert(!bad.ok && /손상/.test(bad.error), JSON.stringify(bad));
+  // 해시(digest)가 없는 릴리스는 내려받기 전에 설치를 거부
+  fakeDigest = undefined;
+  await app.evaluate(() => { globalThis.__ct.ctl.rt.update.status = 'idle'; });
+  await app.evaluate(() => globalThis.__ct.updater.check(false));
+  const noHash = await app.evaluate(() => globalThis.__ct.updater.install());
+  assert(!noHash.ok && /SHA-256/.test(noHash.error), JSON.stringify(noHash));
   fakeDigest = 'sha256:' + crypto.createHash('sha256').update(fakeExe).digest('hex');
 });
 
@@ -609,6 +630,10 @@ await check('바탕화면 위젯: 구글 캘린더(iCal) 연결 → 달력·일�
   await ww.press('[data-testid=todo-input]', 'Enter');
   await until(async () => (await ww.textContent('[data-card=agenda]')).includes('교과서 신청'), 3000, '할 일 추가 안 됨');
   assert((await ww.textContent('[data-card=agenda]')).includes('학년 협의회'), '이번 주 일정 정리에 구글 일정이 없음');
+  // 메모: 제목과 본문을 연달아 고쳐도 둘 다 저장
+  await ww.fill('.memo .memo-title >> nth=0', '준비물');
+  await ww.fill('.memo .memo-text >> nth=0', '리코더, 색연필');
+  await until(async () => (await app.evaluate(() => { const m = globalThis.__ct.ctl.data.widget.memos[0]; return m.title + '|' + m.text; })) === '준비물|리코더, 색연필', 3000, '메모 제목·본문 중 하나가 저장되지 않음');
   // 시간표 고치기
   await ww.dblclick('[data-tt="0-0"]');
   await ww.fill('[data-tt="0-0"] input', '국어');

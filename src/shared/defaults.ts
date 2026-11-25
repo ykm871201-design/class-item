@@ -236,9 +236,29 @@ function normPicker(v: unknown): PickerConfig {
   };
 }
 
+/** 같은 ID가 여러 번 나오면 두 번째부터 새 ID를 준다 (손상·수동 편집 파일 대비) */
+function uniqueIds<T extends { id: string }>(items: T[], prefix: string): T[] {
+  const seen = new Set<string>();
+  return items.map((x) => {
+    if (!x.id || seen.has(x.id)) {
+      const id = newId(prefix);
+      seen.add(id);
+      return { ...x, id };
+    }
+    seen.add(x.id);
+    return x;
+  });
+}
+
+/** 저장·가져오기 파일로 쓸 수 있는 구조인지 (JSON 문법만 맞고 내용이 비어 있는 파일을 걸러냄) */
+export function isUsableData(raw: unknown): boolean {
+  if (!isObj(raw) || raw.version !== 1 || !Array.isArray(raw.classes) || raw.classes.length === 0) return false;
+  return raw.classes.every((c) => isObj(c) && typeof c.id === 'string' && Array.isArray(c.students));
+}
+
 function normClass(v: unknown): ClassRoom | null {
   if (!isObj(v) || typeof v.id !== 'string') return null;
-  const students = arr(v.students, normStudent);
+  const students = uniqueIds(arr(v.students, normStudent), 's_');
   const ids = new Set(students.map((s) => s.id));
   const seating = normSeating(v.seating);
   // 명단에 없는 학생과 연결된 고정 자리는 남기지 않는다
@@ -320,7 +340,7 @@ function normWidget(v: unknown): WidgetData {
 export function normalizeData(raw: unknown): AppData {
   const d = defaultData();
   if (!isObj(raw)) return d;
-  const classes = arr(raw.classes, normClass);
+  const classes = uniqueIds(arr(raw.classes, normClass), 'c_');
   const s = isObj(raw.settings) ? raw.settings : {};
   const ds = defaultSettings();
   const sd = isObj(s.studentDisplay) ? s.studentDisplay : null;
@@ -331,7 +351,7 @@ export function normalizeData(raw: unknown): AppData {
     boardDraft: normBoard(raw.boardDraft),
     boardPublished: normBoard(raw.boardPublished),
     phrases: arr(raw.phrases, (p) => (isObj(p) && typeof p.text === 'string' ? { id: str(p.id, newId('p_')), title: str(p.title, '문구'), text: p.text } : null)),
-    schedules: arr(raw.schedules, normSchedule),
+    schedules: uniqueIds(arr(raw.schedules, normSchedule), 'sch_'),
     scheduleLog: arr(raw.scheduleLog, (e) =>
       isObj(e) && typeof e.message === 'string'
         ? { id: str(e.id, newId('l_')), at: num(e.at, 0), kind: (['fired', 'missed', 'replaced', 'no-display', 'info'].includes(e.kind) ? e.kind : 'info') as any, scheduleId: typeof e.scheduleId === 'string' ? e.scheduleId : undefined, message: e.message, occurrence: typeof e.occurrence === 'string' ? e.occurrence : undefined, acknowledged: bool(e.acknowledged, false) }
@@ -368,8 +388,11 @@ export function validateImport(raw: unknown): { ok: true; data: AppData; summary
   const payload = raw.app === 'classroom-tools' ? raw.data : raw;
   if (raw.app !== undefined && raw.app !== 'classroom-tools') return { ok: false, error: '이 앱에서 내보낸 파일이 아닙니다.' };
   if (!isObj(payload) || payload.version !== 1 || !Array.isArray(payload.classes)) return { ok: false, error: '파일 형식이 맞지 않습니다. 이 앱의 "데이터 내보내기"로 만든 파일을 선택해 주세요.' };
+  if (payload.classes.length === 0) return { ok: false, error: '파일에 학급 정보가 없습니다.' };
+  // 손상된 학급이 섞여 있으면 기본 학급으로 바꿔 '성공'처럼 보이지 않게 거부
+  const bad = payload.classes.filter((c) => !isObj(c) || typeof c.id !== 'string' || !Array.isArray(c.students)).length;
+  if (bad) return { ok: false, error: `파일의 학급 ${payload.classes.length}개 중 ${bad}개가 손상되어 가져올 수 없습니다.` };
   const data = normalizeData(payload);
-  if (!Array.isArray(payload.classes) || payload.classes.length === 0 || data.classes.length === 0) return { ok: false, error: '파일에 학급 정보가 없습니다.' };
   const students = data.classes.reduce((n, c) => n + c.students.length, 0);
   return { ok: true, data, summary: `학급 ${data.classes.length}개, 학생 ${students}명, 예약 ${data.schedules.length}개` };
 }

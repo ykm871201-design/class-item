@@ -54,7 +54,7 @@ describe('컨트롤러: 예고음 → 알림음 순서와 횟수', () => {
   it('30초 타이머 · 10초 전부터: 예고음 10번 후 종료 알림음 1번', () => {
     const sounds: string[] = [];
     const ports: Ports = {
-      persist: () => {}, showStudent: () => true, hideStudent: () => {}, applyTopmost: () => {}, notify: () => {}, broadcast: () => {},
+      persist: () => {}, persistNow: () => {}, showStudent: () => true, hideStudent: () => {}, applyTopmost: () => {}, notify: () => {}, broadcast: () => {},
       playSound: (p) => sounds.push(p.sound), studentWindowStatus: () => ({ visible: true, mode: 'display', fullscreen: true, displayAvailable: true, displayLabel: '', alwaysOnTop: true }), displays: () => [],
     };
     const ctl = new Controller(defaultData(), ports, { userDataPath: '', appVersion: 't' });
