@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import type { WidgetCardId } from '../../shared/types';
-import { BOARD_BACKGROUNDS, CALENDAR_COLORS, WIDGET_CARDS } from '../../shared/defaults';
+import type { StudentCardId, WidgetCardId } from '../../shared/types';
+import { BOARD_BACKGROUNDS, CALENDAR_COLORS, STUDENT_CARDS, WIDGET_CARDS } from '../../shared/defaults';
 import { REGIONS, buildPeriods, fromMin } from '../../shared/widget';
 import { formatDateTimeKo } from '../../shared/util';
 import { act, api, toast, useAppState } from './api';
@@ -367,6 +367,19 @@ function StudentWidgetSettings() {
           </button>
         )}
       </div>
+      <div className="row" style={{ marginTop: 10 }} data-testid="student-cards">
+        <span className="field-label">보일 칸</span>
+        <label className="inline" title="타이머·칠판이 뜨는 자리라 끌 수 없습니다">
+          <input type="checkbox" checked disabled />큰 시계 (항상)
+        </label>
+        {STUDENT_CARDS.map((c) => (
+          <label key={c.id} className="inline">
+            <input type="checkbox" checked={!w.studentHiddenCards.includes(c.id)} onChange={(e) => act('widget/studentCard', { id: c.id as StudentCardId, hidden: !e.target.checked })} data-sw-check={c.id} />
+            {c.name}
+          </label>
+        ))}
+      </div>
+      <p className="small muted" style={{ margin: '4px 0 0' }}>칸을 끄면 남은 칸이 빈자리를 채웁니다. 오른쪽 칸을 모두 끄면 큰 시계가 화면 너비 전체를 씁니다.</p>
       <div className="col" style={{ marginTop: 10 }}>
         <span className="field-label">알림장 (학생 위젯 아래쪽에 보임)</span>
         <textarea rows={3} value={notice} maxLength={1000} placeholder={'예: 내일 준비물 - 리코더, 색연필\n수요일 현장체험학습 동의서 제출'} onChange={(e) => setNotice(e.target.value)} onBlur={() => notice !== w.studentNotice && act('widget/update', { patch: { studentNotice: notice } }, '알림장을 저장했습니다.')} data-testid="student-notice" />

@@ -187,6 +187,9 @@ export type StudentBase = 'blank' | 'board' | 'seating' | 'picker' | 'widget';
 
 export type WidgetCardId = 'calendar' | 'agenda' | 'memo' | 'clock' | 'weather' | 'meal' | 'timetable' | 'tools';
 
+/** 학생용 위젯에서 켜고 끌 수 있는 칸 (큰 시계 칸은 항상 보임) */
+export type StudentCardId = 'calendar' | 'weather' | 'meal' | 'week' | 'today' | 'notice';
+
 /** 구글 캘린더(iCal 비공개 주소) 연결. 주소는 암호화해서 저장하고 화면에는 보내지 않는다 */
 export interface CalendarSource {
   id: string;
@@ -249,6 +252,7 @@ export interface WidgetData {
   glass: boolean; // 칸 바탕 반투명
   background: string; // 보드 배경 (그라데이션 ID)
   studentNotice: string; // 학생용 위젯 '알림장'
+  studentHiddenCards: StudentCardId[]; // 학생용 위젯에서 끈 칸
 }
 
 export interface AppData {
@@ -457,6 +461,7 @@ export interface StudentWidgetView {
   holidays: boolean;
   background: string;
   glass: boolean;
+  hidden: StudentCardId[];
 }
 
 export interface StudentView {

@@ -233,3 +233,20 @@ describe('학생용 위젯 흐름: 큰 칸에 칠판·타이머', () => {
     expect(ctl.studentView().widget!.main).toBe('clock');
   });
 });
+
+describe('학생용 위젯 보일 칸 고르기', () => {
+  it('끈 칸 목록이 학생 화면 정보에 담기고 저장·복원됨', () => {
+    const ports = { persist() {}, showStudent: () => true, hideStudent() {}, applyTopmost() {}, playSound() {}, notify() {}, broadcast() {}, studentWindowStatus: () => ({ visible: true, mode: 'display', fullscreen: true, displayAvailable: true, displayLabel: '', alwaysOnTop: true }), displays: () => [] } as unknown as Ports;
+    const ctl = new Controller(defaultData(), ports, { userDataPath: '', appVersion: 't' });
+    ctl.dispatch({ type: 'student/base', base: 'widget' });
+    expect(ctl.studentView().widget!.hidden).toEqual([]);
+    ctl.dispatch({ type: 'widget/studentCard', id: 'meal', hidden: true });
+    ctl.dispatch({ type: 'widget/studentCard', id: 'notice', hidden: true });
+    ctl.dispatch({ type: 'widget/studentCard', id: 'meal', hidden: true }); // 두 번 눌러도 한 번만
+    expect(ctl.studentView().widget!.hidden).toEqual(['meal', 'notice']);
+    ctl.dispatch({ type: 'widget/studentCard', id: 'meal', hidden: false });
+    expect(ctl.studentView().widget!.hidden).toEqual(['notice']);
+    const back = normalizeData(JSON.parse(JSON.stringify({ ...ctl.data, widget: { ...ctl.data.widget, studentHiddenCards: ['notice', 'nope'] } })));
+    expect(back.widget.studentHiddenCards).toEqual(['notice']); // 모르는 칸 이름은 버림
+  });
+});

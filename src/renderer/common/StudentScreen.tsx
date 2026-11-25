@@ -234,39 +234,58 @@ function StudentWidget({ view, w }: { view: StudentView; w: StudentWidgetView })
   const bg = BOARD_BACKGROUNDS.find((b) => b.id === w.background) ?? BOARD_BACKGROUNDS[0];
   const t = view.timer;
   const mainKind = t ? (t.mode === 'split' ? 'split' : 'timer') : w.main === 'board' ? 'board' : 'clock';
+  const on = (id: string) => !(w.hidden ?? []).includes(id as never);
+  const bottom = on('today') || on('notice');
+  const right = on('calendar') || on('weather') || on('meal') || on('week');
   return (
-    <div className={`sw${w.glass ? ' glass' : ''}`} style={{ background: bg.css }} data-testid="student-widget" data-main={mainKind}>
+    <div className={`sw${w.glass ? ' glass' : ''}${right ? '' : ' no-right'}`} style={{ background: bg.css }} data-testid="student-widget" data-main={mainKind}>
       <div className="sw-left">
         <section className="sw-card sw-main">
           <MainArea kind={mainKind} view={view} w={w} now={now} />
         </section>
-        <div className="sw-bottom">
-          <section className="sw-card">
-            <div className="sw-head">오늘 시간표</div>
-            <TodayTimetable w={w} now={now} />
-          </section>
-          <section className="sw-card sw-notice">
-            <div className="sw-head">알림장</div>
-            <div className="sw-notice-text" data-testid="sw-notice">{w.notice || '오늘도 즐거운 하루!'}</div>
-          </section>
+        {bottom && (
+          <div className={`sw-bottom${on('today') && on('notice') ? '' : ' single'}`}>
+            {on('today') && (
+              <section className="sw-card" data-sw-card="today">
+                <div className="sw-head">오늘 시간표</div>
+                <TodayTimetable w={w} now={now} />
+              </section>
+            )}
+            {on('notice') && (
+              <section className="sw-card sw-notice" data-sw-card="notice">
+                <div className="sw-head">알림장</div>
+                <div className="sw-notice-text" data-testid="sw-notice">{w.notice || '오늘도 즐거운 하루!'}</div>
+              </section>
+            )}
+          </div>
+        )}
+      </div>
+      {right && (
+        <div className="sw-right">
+          {on('calendar') && (
+            <section className="sw-card" data-sw-card="calendar">
+              <MiniCalendar now={now} holidays={w.holidays} />
+            </section>
+          )}
+          {on('weather') && (
+            <section className="sw-card" data-sw-card="weather">
+              <StudentWeather w={w} />
+            </section>
+          )}
+          {on('meal') && (
+            <section className="sw-card" data-sw-card="meal">
+              <div className="sw-head">오늘 급식</div>
+              <div className="sw-meal" data-testid="sw-meal">{w.meal?.dishes.length ? w.meal.dishes.join(' · ') : w.meal?.note ?? '—'}</div>
+            </section>
+          )}
+          {on('week') && (
+            <section className="sw-card sw-week" data-sw-card="week">
+              <div className="sw-head">이번 주 시간표</div>
+              <WeekTimetable w={w} now={now} />
+            </section>
+          )}
         </div>
-      </div>
-      <div className="sw-right">
-        <section className="sw-card">
-          <MiniCalendar now={now} holidays={w.holidays} />
-        </section>
-        <section className="sw-card">
-          <StudentWeather w={w} />
-        </section>
-        <section className="sw-card">
-          <div className="sw-head">오늘 급식</div>
-          <div className="sw-meal" data-testid="sw-meal">{w.meal?.dishes.length ? w.meal.dishes.join(' · ') : w.meal?.note ?? '—'}</div>
-        </section>
-        <section className="sw-card sw-week">
-          <div className="sw-head">이번 주 시간표</div>
-          <WeekTimetable w={w} now={now} />
-        </section>
-      </div>
+      )}
     </div>
   );
 }

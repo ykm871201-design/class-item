@@ -84,6 +84,9 @@ body.student.hide-cursor, body.student.hide-cursor * { cursor: none; }
 .sw-main-inner { position: absolute; inset: 0; container-type: size; overflow: hidden; border-radius: 1.8cqh; }
 .sw-main-inner .st-timer { border-radius: 0; }
 .sw-bottom { flex: 0 0 24%; display: grid; grid-template-columns: 1.3fr 1fr; gap: 1.6cqh; min-height: 0; }
+.sw-bottom.single { grid-template-columns: 1fr; }
+.sw.no-right { grid-template-columns: 1fr; }
+.sw-right > .sw-card:last-child { flex: 1; }
 .sw-head { font-size: 2.4cqh; font-weight: 800; color: #495057; margin-bottom: 0.8cqh; }
 .sw-muted { color: #adb5bd; font-size: 2.4cqh; }
 .sw-clock { width: 100%; height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1.5cqh; padding: 4cqh 6cqw; }

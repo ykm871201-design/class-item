@@ -655,6 +655,25 @@ await check('학생용 위젯: 큰 시계 → 칠판 → 칠판+타이머 → �
   await dispatch(app, { type: 'student/base', base: 'board' });
 });
 
+await check('학생용 위젯 보일 칸 고르기 (교사용처럼 체크)', async () => {
+  await teacher.click('[data-tab=widget]');
+  await teacher.click('[data-testid=student-widget-show]');
+  const sw = await studentWin(app);
+  await sw.waitForSelector('[data-testid=student-widget]');
+  const cards = () => sw.$$eval('[data-sw-card]', (els) => els.map((e) => e.getAttribute('data-sw-card')).join(','));
+  assert((await cards()) === 'today,notice,calendar,weather,meal,week', await cards());
+  for (const id of ['meal', 'notice']) await teacher.click(`[data-sw-check=${id}]`);
+  await until(async () => (await cards()) === 'today,calendar,weather,week', 3000, '칸 끄기 반영 안 됨: ');
+  assert(await sw.$('.sw-bottom.single'), '아래 칸이 하나일 때 너비를 채우지 않음');
+  await sw.screenshot({ path: path.join(shots, '21-student-widget-cards.png') });
+  for (const id of ['calendar', 'weather', 'week']) await teacher.click(`[data-sw-check=${id}]`);
+  await until(async () => !!(await sw.$('.sw.no-right')), 3000, '오른쪽 칸을 모두 끄면 큰 시계가 넓어지지 않음');
+  assert(await sw.$('[data-testid=sw-clock]'), '큰 시계가 사라짐');
+  for (const id of ['meal', 'notice', 'calendar', 'weather', 'week']) await teacher.click(`[data-sw-check=${id}]`);
+  await until(async () => (await cards()) === 'today,notice,calendar,weather,meal,week', 3000, '다시 켜기 반영 안 됨');
+  await dispatch(app, { type: 'student/base', base: 'board' });
+});
+
 await check('교사 화면 스크린샷', async () => {
   await teacher.click('[data-tab=seating]');
   await teacher.screenshot({ path: path.join(shots, '09-teacher-seating.png') });

@@ -68,6 +68,7 @@ export function buildStudentView(data: AppData, rt: Pick<Runtime, 'timer' | 'sea
           holidays: w.holidays,
           background: w.background,
           glass: w.glass,
+          hidden: [...w.studentHiddenCards],
         }
       : null;
   return { base: data.studentBase, board: boardView(data.boardPublished), seating, picker, timer, widget };

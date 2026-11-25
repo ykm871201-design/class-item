@@ -626,6 +626,11 @@ export class Controller {
         }
         return;
       }
+      case 'widget/studentCard': {
+        const w = this.data.widget;
+        w.studentHiddenCards = a.hidden ? [...new Set([...w.studentHiddenCards, a.id])] : w.studentHiddenCards.filter((x) => x !== a.id);
+        return;
+      }
       case 'widget/card': {
         const w = this.data.widget;
         w.hiddenCards = a.hidden ? [...new Set([...w.hiddenCards, a.id])] : w.hiddenCards.filter((x) => x !== a.id);

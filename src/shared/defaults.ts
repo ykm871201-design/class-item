@@ -1,5 +1,5 @@
 // 기본값과 저장 데이터 정규화·가져오기 검증
-import type { AppData, BoardStyle, ClassRoom, PickerConfig, Schedule, SeatingConfig, SeatLayout, Settings, SoundId, Student, WidgetCardId, WidgetData } from './types';
+import type { AppData, BoardStyle, ClassRoom, PickerConfig, Schedule, SeatingConfig, SeatLayout, Settings, SoundId, Student, StudentCardId, WidgetCardId, WidgetData } from './types';
 import { cleanGroups, cleanLayout, suggestLayout, LIMITS } from './seating';
 import { clamp, newId } from './util';
 import { normalizeWarnFrom } from './timer';
@@ -68,6 +68,15 @@ export const WIDGET_CARDS: { id: WidgetCardId; name: string }[] = [
   { id: 'tools', name: '수업 도구' },
 ];
 
+export const STUDENT_CARDS: { id: StudentCardId; name: string }[] = [
+  { id: 'calendar', name: '달력' },
+  { id: 'weather', name: '날씨 · 미세먼지' },
+  { id: 'meal', name: '급식' },
+  { id: 'week', name: '이번 주 시간표' },
+  { id: 'today', name: '오늘 시간표' },
+  { id: 'notice', name: '알림장' },
+];
+
 export const MEMO_COLORS = ['#fff3a8', '#ffd6e0', '#d3e9ff', '#d8f5c9', '#ece0ff', '#ffe2c2'];
 // 차례로 붙는 캘린더 색 (내 일정 초록·공휴일 빨강과 겹치지 않게, 이웃 색끼리 잘 구분되게)
 export const CALENDAR_COLORS = ['#3b5bdb', '#e67700', '#9c36b5', '#0c8599', '#c2255c', '#5c940d', '#1c7ed6', '#d9480f', '#5f3dc4', '#495057', '#862e9c', '#2b8a3e'];
@@ -98,6 +107,7 @@ export function defaultWidget(): WidgetData {
     glass: true,
     background: 'sky',
     studentNotice: '',
+    studentHiddenCards: [],
   };
 }
 
@@ -303,6 +313,7 @@ function normWidget(v: unknown): WidgetData {
     glass: bool(v.glass, true),
     background: str(v.background, 'sky'),
     studentNotice: str(v.studentNotice, '').slice(0, 1000),
+    studentHiddenCards: arr(v.studentHiddenCards, (x) => (STUDENT_CARDS.some((c) => c.id === x) ? (x as StudentCardId) : null)),
   };
 }
 
