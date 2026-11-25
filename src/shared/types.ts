@@ -148,6 +148,8 @@ export interface Settings {
   studentFullscreen: boolean;
   /** 학생 화면이 보이는 동안 다른 창보다 항상 위에 표시 */
   studentAlwaysOnTop: boolean;
+  /** 칠판 실시간 반영: 입력하는 즉시 학생 화면 칠판에 반영 */
+  boardLive: boolean;
   showStudentOnStartup: boolean;
   autoLaunch: boolean;
   closeToTrayNoticeShown: boolean;

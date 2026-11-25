@@ -271,18 +271,19 @@ export class Controller {
       // ----- 칠판 -----
       case 'board/updateDraft':
         this.data.boardDraft = { ...this.data.boardDraft, ...sanitizeBoardPatch(a.patch) };
+        this.syncLiveBoard();
         return;
       case 'board/publish':
-        this.data.boardPublished = { ...this.data.boardDraft };
-        // 함께 보기 중이면 타이머를 유지한 채 문구만 갱신
-        if (this.data.studentBase !== 'board') {
-          this.data.studentBase = 'board';
-          this.rt.seatingReveal = null;
-        }
-        this.ports.showStudent({ inactive: false, reason: 'teacher' });
+        this.publishBoard();
+        return;
+      case 'board/setLive':
+        // 실시간 반영: 켜는 순간 지금 내용을 학생 화면에 표시하고, 이후 입력은 바로 반영
+        this.data.settings.boardLive = !!a.value;
+        if (this.data.settings.boardLive) this.publishBoard();
         return;
       case 'board/clearDraft':
         this.data.boardDraft = { ...this.data.boardDraft, text: '' };
+        this.syncLiveBoard();
         return;
       case 'phrase/save': {
         const text = String(a.text ?? this.data.boardDraft.text);
@@ -297,6 +298,7 @@ export class Controller {
       case 'phrase/load': {
         const p = this.data.phrases.find((x) => x.id === a.id);
         if (p) this.data.boardDraft = { ...this.data.boardDraft, text: p.text };
+        this.syncLiveBoard();
         return;
       }
 
@@ -559,6 +561,21 @@ export class Controller {
       default:
         return { ok: false, error: '알 수 없는 동작: ' + a.type };
     }
+  }
+
+  /** 작성 중인 칠판을 학생 화면에 표시 (함께 보기 중이면 타이머는 그대로 두고 문구만 갱신) */
+  private publishBoard(): void {
+    this.data.boardPublished = { ...this.data.boardDraft };
+    if (this.data.studentBase !== 'board') {
+      this.data.studentBase = 'board';
+      this.rt.seatingReveal = null;
+    }
+    this.ports.showStudent({ inactive: false, reason: 'teacher' });
+  }
+
+  /** 실시간 반영이 켜져 있으면 작성 내용을 곧바로 공개본에 반영 (학생 화면 전환은 하지 않음) */
+  private syncLiveBoard(): void {
+    if (this.data.settings.boardLive) this.data.boardPublished = { ...this.data.boardDraft };
   }
 
   private selectClass(id: string): void {

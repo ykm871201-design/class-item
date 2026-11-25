@@ -117,6 +117,18 @@ await check('학생 화면에 표시 → TV 디스플레이에 칠판 표시', a
   await sw.screenshot({ path: path.join(shots, '01-student-board.png') });
 });
 
+await check('칠판 실시간 반영: 켜면 입력하는 즉시 학생 화면에 보임', async () => {
+  await teacher.click('[data-testid=board-live]');
+  await teacher.fill('[data-testid=board-input]', '실시간으로 보이는 문장');
+  const sw = await studentWin(app);
+  await until(async () => (await sw.textContent('[data-testid=board-text]'))?.includes('실시간으로 보이는 문장'), 3000, '입력 내용이 학생 화면에 바로 반영되지 않음');
+  await teacher.click('[data-testid=board-live]'); // 끄기
+  await teacher.fill('[data-testid=board-input]', '오늘의 할 일\n1. 수학 익힘책 24쪽\n2. 받아쓰기 연습');
+  await sleep(800);
+  assert((await sw.textContent('[data-testid=board-text]')).includes('실시간으로 보이는 문장'), '끈 뒤에도 바로 반영됨');
+  await teacher.click('[data-testid=board-publish]');
+});
+
 await check('숨겨진 고정 자리: 교사 UI로 고정 → 바로 추첨·공개 → 학생 화면에 고정 표시 없음', async () => {
   await teacher.click('[data-tab=seating]');
   await teacher.click('[data-seat=r0c0]');

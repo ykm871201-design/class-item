@@ -10,6 +10,7 @@ export function BoardTab() {
   const [text, setText] = useState(d.text);
   const textRef = useRef(d.text);
   const lastSent = useRef(d.text);
+  const live = data.settings.boardLive;
   const timer = useRef<number | null>(null);
   const [phraseTitle, setPhraseTitle] = useState('');
 
@@ -34,17 +35,22 @@ export function BoardTab() {
     textRef.current = t;
     setText(t);
     if (timer.current) window.clearTimeout(timer.current);
-    timer.current = window.setTimeout(() => flush(t), 300); // 자동 저장
+    // 자동 저장 (실시간 반영 중에는 더 짧게 → 입력하는 대로 학생 화면에 보임)
+    timer.current = window.setTimeout(() => flush(t), live ? 120 : 300);
   };
   useEffect(() => () => void flush(), []); // 탭을 떠날 때 저장
 
   const patch = (p: Partial<BoardStyle>) => act('board/updateDraft', { patch: p });
+  const toggleLive = async () => {
+    await flush();
+    await act('board/setLive', { value: !live }, live ? '실시간 반영을 껐습니다. 이제 ‘학생 화면에 표시’를 눌러야 반영됩니다.' : '실시간 반영을 켰습니다. 입력하는 내용이 바로 학생 화면에 보입니다.');
+  };
   const publish = async () => {
     await flush();
     await act('board/publish', {}, '학생 화면에 표시했습니다.');
   };
   const clear = async () => {
-    if (!text.trim() || (await api().confirm({ message: '작성 중인 칠판 내용을 모두 지울까요?', detail: '학생 화면에 이미 표시된 내용은 ‘학생 화면에 표시’를 누르기 전까지 그대로 유지됩니다.', ok: '지우기' }))) {
+    if (!text.trim() || (await api().confirm({ message: '작성 중인 칠판 내용을 모두 지울까요?', detail: live ? '실시간 반영 중이라 학생 화면 칠판도 함께 지워집니다.' : '학생 화면에 이미 표시된 내용은 ‘학생 화면에 표시’를 누르기 전까지 그대로 유지됩니다.', ok: '지우기' }))) {
       lastSent.current = '';
       textRef.current = '';
       setText('');
@@ -61,7 +67,7 @@ export function BoardTab() {
   return (
     <div>
       <h1 className="t-title">큰 글씨 칠판</h1>
-      <p className="t-sub">입력한 내용은 자동 저장되며, ‘학생 화면에 표시’를 눌러야 학생에게 보입니다.</p>
+      <p className="t-sub">입력한 내용은 자동 저장됩니다. ‘학생 화면에 표시’를 누르거나, ‘실시간 반영’을 켜 두면 입력하는 즉시 학생에게 보입니다.</p>
       <div className="grid2">
         <div>
           <div className="card">
@@ -79,15 +85,24 @@ export function BoardTab() {
               data-testid="board-input"
             />
             <div className="row" style={{ marginTop: 10 }}>
-              <button className="btn huge primary" onClick={publish} data-testid="board-publish">
+              <button className="btn huge primary" onClick={publish} data-testid="board-publish" disabled={live}>
                 학생 화면에 표시
+              </button>
+              <button className={`btn huge ${live ? 'ok' : ''}`} onClick={toggleLive} data-testid="board-live" title="켜 두면 입력하는 내용이 바로 학생 화면 칠판에 보입니다">
+                {live ? '● 실시간 반영 중 (끄기)' : '실시간 반영 켜기'}
               </button>
               <button className="btn danger" onClick={clear}>
                 내용 전체 지우기
               </button>
             </div>
             <div style={{ marginTop: 8 }}>
-              {differs ? <div className="alert warn">작성 중인 내용이 학생 화면과 다릅니다. ‘학생 화면에 표시’를 누르면 반영됩니다.</div> : <div className="alert ok">학생 화면에 표시된 내용과 같습니다.</div>}
+              {live ? (
+                <div className="alert ok">실시간 반영 중입니다. 입력하는 내용과 글자·색 변경이 바로 학생 화면 칠판에 보입니다.</div>
+              ) : differs ? (
+                <div className="alert warn">작성 중인 내용이 학생 화면과 다릅니다. ‘학생 화면에 표시’를 누르거나 ‘실시간 반영’을 켜면 반영됩니다.</div>
+              ) : (
+                <div className="alert ok">학생 화면에 표시된 내용과 같습니다.</div>
+              )}
               {fullTimer && <div className="alert info">지금은 전체 화면 타이머가 표시 중입니다. 표시한 칠판 문구는 타이머를 닫으면 바로 보입니다.</div>}
               {studentView.timer?.mode === 'split' && <div className="alert info">칠판 + 타이머 함께 보기 중입니다. 표시를 누르면 타이머는 그대로 두고 문구만 바뀝니다.</div>}
             </div>
@@ -151,7 +166,7 @@ export function BoardTab() {
         <div>
           <div className="card">
             <h2>
-              편집 중 미리보기 <span className="hint">학생에게는 보이지 않습니다</span>
+              편집 중 미리보기 <span className="hint">{live ? '실시간 반영 중 — 학생 화면과 같습니다' : '학생에게는 보이지 않습니다'}</span>
             </h2>
             <div className="draft-preview">
               <StudentScreen view={draftView} />
