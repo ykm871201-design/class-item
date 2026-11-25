@@ -216,3 +216,29 @@ export function cleanDishes(raw: string): { dishes: string[]; allergies: string[
 }
 
 export const ALLERGY_NAMES = ['', '난류', '우유', '메밀', '땅콩', '대두', '밀', '고등어', '게', '새우', '돼지고기', '복숭아', '토마토', '아황산류', '호두', '닭고기', '쇠고기', '오징어', '조개류', '잣'];
+
+// ---------------- 시간표 ----------------
+
+export const SUBJECTS = ['국어', '수학', '사회', '과학', '영어', '도덕', '음악', '미술', '체육', '실과', '창체', '자율', '동아리', '바른 생활', '슬기로운 생활', '즐거운 생활', '안전한 생활', '통합'];
+
+const DAY_HEAD = /^(월|화|수|목|금|토|일)(요일)?$/;
+const PERIOD_HEAD = /^(\d{1,2})\s*(교시)?$|^교시$/;
+
+/**
+ * 엑셀·한글에서 복사한 시간표를 [요일 0=월..4=금][교시] 표로 바꾼다.
+ * 줄 = 교시, 칸 = 월~금. 맨 위 요일 머리글 줄과 맨 앞 교시 번호 칸은 건너뛴다.
+ */
+export function parseTimetablePaste(text: string, maxPeriods = 10): { table: string[][]; rows: number } | null {
+  const lines = text.replace(/\r\n?/g, '\n').split('\n').filter((l) => l.trim() !== '');
+  if (!lines.length) return null;
+  let rows = lines.map((l) => (l.includes('\t') ? l.split('\t') : l.includes(',') ? l.split(',') : l.trim().split(/\s{2,}|\s+/)).map((c) => c.trim()));
+  // 요일 머리글 줄
+  if (rows[0].filter((c) => DAY_HEAD.test(c)).length >= 3) rows = rows.slice(1);
+  // 앞 칸이 교시 번호(또는 빈칸)면 건너뜀
+  const firstIsPeriod = rows.length > 0 && rows.every((r) => r.length >= 2 && (r[0] === '' || PERIOD_HEAD.test(r[0])));
+  if (firstIsPeriod) rows = rows.map((r) => r.slice(1));
+  rows = rows.slice(0, maxPeriods);
+  if (!rows.length) return null;
+  const table = Array.from({ length: 5 }, (_, d) => Array.from({ length: 10 }, (_, p) => (rows[p]?.[d] ?? '').slice(0, 20)));
+  return { table, rows: rows.length };
+}

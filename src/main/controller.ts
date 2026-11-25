@@ -688,6 +688,12 @@ export class Controller {
         this.data.widget.timetable[d][p] = String(a.value ?? '').slice(0, 20);
         return;
       }
+      case 'widget/timetableAll': {
+        const t = a.table;
+        if (!Array.isArray(t)) return { ok: false };
+        this.data.widget.timetable = Array.from({ length: 5 }, (_, d) => Array.from({ length: 10 }, (_, p) => String(t[d]?.[p] ?? '').slice(0, 20)));
+        return;
+      }
       case 'widget/calendarUpdate': {
         const c = this.data.widget.calendars.find((x) => x.id === a.id);
         if (!c) return { ok: false, error: '캘린더를 찾을 수 없습니다.' };

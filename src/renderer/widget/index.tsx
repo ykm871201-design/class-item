@@ -443,7 +443,6 @@ function ClockCard() {
   const d = new Date(now);
   const p = periodNow(data.widget.periods, d);
   const dow = d.getDay();
-  const subject = (no: number) => (dow >= 1 && dow <= 5 ? data.widget.timetable[dow - 1]?.[no - 1] ?? '' : '');
   const remain = `${Math.floor(p.remainSec / 60)}분 ${pad2(p.remainSec % 60)}초 남음`;
   return (
     <Card id="clock" title={`${d.getMonth() + 1}월 ${d.getDate()}일 ${WEEKDAY_KO[dow]}요일`} className="wc-clock">
@@ -453,7 +452,6 @@ function ClockCard() {
         </div>
         <div className="clk-period">
           <div className={`clk-now ${p.state}`}>{p.title}</div>
-          {p.current && p.current.kind === 'class' && subject(p.current.no) && <div className="clk-subj">{subject(p.current.no)}</div>}
         </div>
       </div>
       {(p.state === 'class' || p.state === 'break' || p.state === 'lunch' || p.state === 'before') && (
@@ -462,7 +460,7 @@ function ClockCard() {
             <div style={{ width: `${Math.round(p.progress * 100)}%` }} />
           </div>
           <div className="clk-sub">
-            <span>{p.next ? `다음 ${p.next.label}${subject(p.next.no) ? ` · ${subject(p.next.no)}` : ''}` : p.sub}</span>
+            <span>{p.next ? `다음 ${p.next.label}` : p.sub}</span>
             <span>{remain}</span>
           </div>
         </>

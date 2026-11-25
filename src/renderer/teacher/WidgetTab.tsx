@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import type { StudentCardId, WidgetCardId } from '../../shared/types';
 import { BOARD_BACKGROUNDS, CALENDAR_COLORS, STUDENT_CARDS, WIDGET_CARDS } from '../../shared/defaults';
-import { REGIONS, buildPeriods, fromMin } from '../../shared/widget';
+import { REGIONS, SUBJECTS, buildPeriods, fromMin, parseTimetablePaste } from '../../shared/widget';
+import { WEEKDAY_KO } from '../../shared/util';
 import { formatDateTimeKo } from '../../shared/util';
 import { act, api, toast, useAppState } from './api';
 
@@ -62,6 +63,8 @@ export function WidgetTab() {
       <StudentWidgetSettings />
 
       <CalendarSettings />
+
+      <TimetableSettings />
 
       <div className="grid2">
         <PeriodSettings />
@@ -384,6 +387,120 @@ function StudentWidgetSettings() {
         <span className="field-label">알림장 (학생 위젯 아래쪽에 보임)</span>
         <textarea rows={3} value={notice} maxLength={1000} placeholder={'예: 내일 준비물 - 리코더, 색연필\n수요일 현장체험학습 동의서 제출'} onChange={(e) => setNotice(e.target.value)} onBlur={() => notice !== w.studentNotice && act('widget/update', { patch: { studentNotice: notice } }, '알림장을 저장했습니다.')} data-testid="student-notice" />
       </div>
+    </div>
+  );
+}
+
+function TimetableSettings() {
+  const { data } = useAppState();
+  const w = data.widget;
+  const slots = buildPeriods(w.periods).filter((x) => x.kind === 'class');
+  const [paste, setPaste] = useState('');
+  const [showPaste, setShowPaste] = useState(false);
+  const today = new Date().getDay(); // 0=일
+  const todayIdx = today >= 1 && today <= 5 ? today - 1 : -1;
+  const filled = w.timetable.some((d) => d.some((x) => x));
+  const applyPaste = async () => {
+    const r = parseTimetablePaste(paste, w.periods.count);
+    if (!r) return toast('붙여넣은 내용에서 시간표를 찾지 못했습니다.', 'err');
+    if (filled && !(await api().confirm({ message: '지금 시간표를 붙여넣은 내용으로 바꿀까요?', detail: `${r.rows}교시까지 월~금 칸을 채웁니다.`, ok: '바꾸기' }))) return;
+    await act('widget/timetableAll', { table: r.table }, `시간표를 채웠습니다 (${r.rows}교시까지).`);
+    setPaste('');
+    setShowPaste(false);
+  };
+  return (
+    <div className="card" data-testid="timetable-settings">
+      <h2>
+        이번 주 시간표 <span className="hint">매주 같은 시간표 · 교시 수는 ‘교시 시각’ 설정을 따름</span>
+      </h2>
+      <datalist id="subject-list">
+        {SUBJECTS.map((x) => (
+          <option key={x} value={x} />
+        ))}
+      </datalist>
+      <table className="tt-edit">
+        <thead>
+          <tr>
+            <th style={{ width: 90 }} />
+            {['월', '화', '수', '목', '금'].map((x, i) => (
+              <th key={x} className={i === todayIdx ? 'today' : ''}>
+                {x}
+                {i === todayIdx && ' (오늘)'}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {slots.map((sl) => (
+            <tr key={sl.no}>
+              <th>
+                {sl.no}교시
+                <div className="small muted">{fromMin(sl.start)}</div>
+              </th>
+              {[0, 1, 2, 3, 4].map((d) => {
+                const v = w.timetable[d]?.[sl.no - 1] ?? '';
+                return (
+                  <td key={d} className={d === todayIdx ? 'today' : ''}>
+                    <input
+                      key={`${d}-${sl.no}-${v}`}
+                      type="text"
+                      list="subject-list"
+                      defaultValue={v}
+                      maxLength={20}
+                      placeholder="—"
+                      onBlur={(e) => e.target.value !== v && act('widget/timetable', { day: d, period: sl.no - 1, value: e.target.value.trim() })}
+                      onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
+                      data-ttset={`${d}-${sl.no - 1}`}
+                    />
+                  </td>
+                );
+              })}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <div className="row" style={{ marginTop: 10 }}>
+        <span className="field-label">오늘 시간표{todayIdx >= 0 ? ` (${WEEKDAY_KO[today]})` : ''}</span>
+        {todayIdx < 0 ? (
+          <span className="small muted">오늘은 주말입니다.</span>
+        ) : (
+          <span className="row" style={{ gap: 6 }} data-testid="today-preview">
+            {slots.map((sl) => (
+              <span key={sl.no} className="pill">
+                {sl.no} {w.timetable[todayIdx]?.[sl.no - 1] || '—'}
+              </span>
+            ))}
+          </span>
+        )}
+      </div>
+      <p className="small muted" style={{ margin: '6px 0 0' }}>
+        오늘 시간표는 이 표에서 오늘 요일 줄을 그대로 가져옵니다. 학생용 위젯의 ‘오늘 시간표’와 교사용·학생용 위젯의 ‘이번 주 시간표’에 바로 반영됩니다.
+      </p>
+      <div className="row" style={{ marginTop: 10 }}>
+        <button className="btn" onClick={() => setShowPaste(!showPaste)} data-testid="tt-paste-toggle">
+          엑셀·한글에서 붙여넣기
+        </button>
+        <button
+          className="btn danger"
+          disabled={!filled}
+          onClick={async () => {
+            if (await api().confirm({ message: '시간표를 모두 지울까요?', ok: '모두 지우기' })) act('widget/timetableAll', { table: [[], [], [], [], []] }, '시간표를 지웠습니다.');
+          }}
+        >
+          모두 지우기
+        </button>
+      </div>
+      {showPaste && (
+        <div className="col" style={{ marginTop: 8 }}>
+          <span className="small muted">시간표 표를 복사해 붙여넣으세요. 한 줄이 한 교시, 칸이 월~금입니다. 맨 위 요일 줄과 맨 앞 교시 번호 칸은 있어도 됩니다.</span>
+          <textarea rows={6} value={paste} onChange={(e) => setPaste(e.target.value)} placeholder={'\t월\t화\t수\t목\t금\n1\t국어\t수학\t사회\t국어\t과학\n2\t수학\t국어\t체육\t음악\t영어'} data-testid="tt-paste" />
+          <div className="row">
+            <button className="btn primary" disabled={!paste.trim()} onClick={applyPaste} data-testid="tt-paste-apply">
+              표에 채우기
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

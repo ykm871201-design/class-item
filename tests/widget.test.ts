@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { parseIcs, googleAddUrl, normalizeIcsUrl, zonedToEpoch } from '../src/shared/ical';
 import { koreanHolidays } from '../src/shared/holidays';
-import { buildPeriods, cleanDishes, mergedEvents, periodNow, airGrade } from '../src/shared/widget';
+import { buildPeriods, cleanDishes, mergedEvents, periodNow, airGrade, parseTimetablePaste } from '../src/shared/widget';
 import { defaultData, defaultWidget, normalizeData } from '../src/shared/defaults';
 import { buildStudentView } from '../src/shared/studentView';
 import { idleTimer } from '../src/shared/timer';
@@ -248,5 +248,24 @@ describe('학생용 위젯 보일 칸 고르기', () => {
     expect(ctl.studentView().widget!.hidden).toEqual(['notice']);
     const back = normalizeData(JSON.parse(JSON.stringify({ ...ctl.data, widget: { ...ctl.data.widget, studentHiddenCards: ['notice', 'nope'] } })));
     expect(back.widget.studentHiddenCards).toEqual(['notice']); // 모르는 칸 이름은 버림
+  });
+});
+
+describe('시간표 붙여넣기', () => {
+  it('엑셀: 요일 머리글 + 교시 번호 칸', () => {
+    const r = parseTimetablePaste('\t월\t화\t수\t목\t금\n1교시\t국어\t수학\t사회\t국어\t과학\n2\t수학\t국어\t체육\t음악\t영어\n3\t바른 생활\t\t미술\t\t창체')!;
+    expect(r.rows).toBe(3);
+    expect(r.table[0].slice(0, 3)).toEqual(['국어', '수학', '바른 생활']); // 월
+    expect(r.table[2].slice(0, 3)).toEqual(['사회', '체육', '미술']); // 수
+    expect(r.table[1][2]).toBe(''); // 빈칸 유지
+    expect(r.table[4].length).toBe(10);
+  });
+  it('머리글 없이 과목만', () => {
+    const r = parseTimetablePaste('국어\t수학\t사회\t국어\t과학\n수학\t국어\t체육\t음악\t영어')!;
+    expect([r.rows, r.table[4][1]]).toEqual([2, '영어']);
+  });
+  it('교시 수보다 긴 줄은 자르고, 빈 내용은 null', () => {
+    expect(parseTimetablePaste('a\tb\tc\td\te\n'.repeat(8), 6)!.rows).toBe(6);
+    expect(parseTimetablePaste('  \n ')).toBeNull();
   });
 });

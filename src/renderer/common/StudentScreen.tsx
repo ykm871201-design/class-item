@@ -312,7 +312,6 @@ function BigClock({ w, now }: { w: StudentWidgetView; now: number }) {
   const d = new Date(now);
   const p = periodNow(w.periods, d);
   const dow = d.getDay();
-  const subj = (no: number) => (dow >= 1 && dow <= 5 ? w.timetable[dow - 1]?.[no - 1] ?? '' : '');
   const showBar = p.state === 'class' || p.state === 'break' || p.state === 'lunch' || p.state === 'play' || p.state === 'before';
   const min = Math.ceil(p.remainSec / 60);
   return (
@@ -323,17 +322,14 @@ function BigClock({ w, now }: { w: StudentWidgetView; now: number }) {
       <div className="sw-clock-time">
         {pad2(d.getHours())}:{pad2(d.getMinutes())}
       </div>
-      <div className={`sw-clock-period ${p.state}`}>
-        {p.title}
-        {p.current?.kind === 'class' && subj(p.current.no) ? ` · ${subj(p.current.no)}` : ''}
-      </div>
+      <div className={`sw-clock-period ${p.state}`}>{p.title}</div>
       {showBar && (
         <>
           <div className="sw-clock-bar">
             <div style={{ width: `${Math.round(p.progress * 100)}%` }} />
           </div>
           <div className="sw-clock-sub">
-            <span>{p.next ? `다음: ${p.next.label}${subj(p.next.no) ? ` ${subj(p.next.no)}` : ''}` : p.sub}</span>
+            <span>{p.next ? `다음: ${p.next.label}` : p.sub}</span>
             <span>{min}분 남음</span>
           </div>
         </>

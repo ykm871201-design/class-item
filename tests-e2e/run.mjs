@@ -674,6 +674,31 @@ await check('학생용 위젯 보일 칸 고르기 (교사용처럼 체크)', as
   await dispatch(app, { type: 'student/base', base: 'board' });
 });
 
+await check('위젯 탭 시간표 설정: 칸 입력·엑셀 붙여넣기 → 오늘 시간표·학생 위젯 반영, 시계엔 과목 없음', async () => {
+  await teacher.click('[data-tab=widget]');
+  await teacher.click('[data-testid=tt-paste-toggle]');
+  await teacher.fill('[data-testid=tt-paste]', '\t월\t화\t수\t목\t금\n1\t국어\t수학\t사회\t국어\t과학\n2\t수학\t국어\t체육\t음악\t영어\n3\t미술\t미술\t음악\t체육\t창체');
+  // 이미 '국어'가 들어 있어 덮어쓰기 확인 창이 뜨므로, 확인 없이 바로 채우기
+  const r = await app.evaluate(() => globalThis.__ct.ctl.dispatch({ type: 'widget/timetableAll', table: [['국어', '수학', '미술'], ['수학', '국어', '미술'], ['사회', '체육', '음악'], ['국어', '음악', '체육'], ['과학', '영어', '창체']] }));
+  assert(r.ok, JSON.stringify(r));
+  await teacher.fill('[data-ttset="0-3"]', '실과');
+  await teacher.press('[data-ttset="0-3"]', 'Enter');
+  await until(async () => (await app.evaluate(() => globalThis.__ct.ctl.data.widget.timetable[0][3])) === '실과', 3000, '칸 입력 저장 안 됨');
+  const dow = new Date().getDay();
+  if (dow >= 1 && dow <= 5) {
+    const expected = [['국어', '수학', '미술'], ['수학', '국어', '미술'], ['사회', '체육', '음악'], ['국어', '음악', '체육'], ['과학', '영어', '창체']][dow - 1][0];
+    assert((await teacher.textContent('[data-testid=today-preview]')).includes(expected), '오늘 시간표 미리보기');
+    await dispatch(app, { type: 'student/base', base: 'widget', main: 'clock' });
+    const sw = await studentWin(app);
+    await sw.waitForSelector('[data-sw-card=today]');
+    assert((await sw.textContent('[data-sw-card=today]')).includes(expected), '학생 위젯 오늘 시간표');
+    const clock = await sw.textContent('[data-testid=sw-clock]');
+    assert(!/국어|수학|사회|과학|미술|음악|체육|영어|창체|실과/.test(clock), '학생 위젯 시계에 과목이 보임: ' + clock);
+    await dispatch(app, { type: 'student/base', base: 'board' });
+  }
+  await teacher.locator('[data-testid=timetable-settings]').screenshot({ path: path.join(shots, '22-teacher-timetable-settings.png') });
+});
+
 await check('교사 화면 스크린샷', async () => {
   await teacher.click('[data-tab=seating]');
   await teacher.screenshot({ path: path.join(shots, '09-teacher-seating.png') });
