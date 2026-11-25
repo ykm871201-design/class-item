@@ -7,7 +7,7 @@ import { koreanHolidays } from '../../shared/holidays';
 import { REGIONS, airGrade, buildPeriods, periodNow, weatherText } from '../../shared/widget';
 import { WEEKDAY_KO, localDateKey, pad2 } from '../../shared/util';
 import { formatClock } from '../../shared/util';
-import { fitFontPx, widestAt100 } from './fit';
+import { fitFontPx, fitLShape, widestAt100 } from './fit';
 import { FitText } from './FitText';
 import { useNow, useSize, useFontsReady } from './hooks';
 
@@ -63,26 +63,50 @@ export function boardFontPx(board: StudentBoardView, innerW: number, innerH: num
 }
 
 // ---------------- 칠판 + 타이머 함께 보기 ----------------
+// 오른쪽 아래 1/4(가로 50% × 세로 50%)은 타이머 전용.
+// 칠판 문구는 나머지 ㄱ자 영역 전체를 쓴다: 위쪽 줄은 화면 전체 너비, 타이머 옆 줄은 왼쪽 절반 너비.
+// 글자가 타이머를 가리지 않고, 남는 오른쪽 위 공간도 비지 않는다.
 function SplitView({ board, timer, size }: { board: StudentBoardView; timer: StudentTimerView; size: { w: number; h: number } }) {
   const { w, h } = size;
-  // 오른쪽 아래 1/4(가로 50% × 세로 50%)은 타이머 전용. 칠판 문구는 남은 영역 중
-  // 위쪽 띠(전체 너비 × 위 50%)와 왼쪽 띠(왼쪽 50% × 전체 높이) 가운데 글씨가 더 크게 들어가는 쪽에 배치한다.
-  const layout = useMemo(() => {
-    const padTop = Math.round(Math.min(w, h / 2) * 0.06);
-    const padLeft = Math.round(Math.min(w / 2, h) * 0.06);
-    const top = boardFontPx(board, w - padTop * 2, h / 2 - padTop * 2, h);
-    const left = boardFontPx(board, w / 2 - padLeft * 2, h - padLeft * 2, h);
-    return left > top ? 'left' : 'top';
-  }, [board, w, h]);
-  const bw = layout === 'top' ? w : w / 2;
-  const bh = layout === 'top' ? h / 2 : h;
   return (
     <div className="st-split" style={{ background: board.bg }}>
-      <div className={`st-split-board st-split-board-${layout}`} style={{ width: bw, height: bh }} data-testid="split-board" data-layout={layout}>
-        <BoardArea board={board} w={bw} h={bh} refH={h} />
+      <div className="st-split-board" style={{ width: w, height: h }} data-testid="split-board" data-layout="l-shape">
+        <LBoardArea board={board} w={w} h={h} cutW={w / 2} cutH={h / 2} />
       </div>
       <div className="st-split-timer" style={{ width: w / 2, height: h / 2 }} data-testid="split-timer">
         <TimerPanel timer={timer} variant="split" />
+      </div>
+    </div>
+  );
+}
+
+/** 오른쪽 아래(cutW×cutH)를 비워 둔 칠판 */
+function LBoardArea({ board, w, h, cutW, cutH }: { board: StudentBoardView; w: number; h: number; cutW: number; cutH: number }) {
+  const pad = Math.round(Math.min(w, h) * 0.05);
+  const gap = Math.round(Math.min(w, h) * 0.02); // 타이머와 글 사이 여백
+  const innerW = Math.max(0, w - pad * 2);
+  const innerH = Math.max(0, h - pad * 2);
+  const cw = Math.min(innerW, cutW - pad + gap);
+  const ch = Math.min(innerH, cutH - pad + gap);
+  const fit = useMemo(() => {
+    if (!board.text.trim()) return { px: 16, offset: 0 };
+    const max = board.autoFit ? h * 0.4 : (h * board.fontSize) / 100;
+    return fitLShape(board.text, { width: innerW, height: innerH, cutW: cw, cutH: ch }, max, { bold: board.bold, align: board.align, lineHeight: LINE_HEIGHT }, board.vAlign ?? 'middle');
+  }, [board, innerW, innerH, cw, ch, h]);
+  return (
+    <div className="st-board" style={{ background: board.bg, color: board.color, padding: pad, width: w, height: h }}>
+      <div className="st-lbox" style={{ width: innerW, height: innerH }}>
+        <div style={{ float: 'right', width: 0, height: Math.max(0, innerH - ch) }} />
+        <div style={{ float: 'right', clear: 'right', width: cw, height: ch }} data-testid="board-cut" />
+        <div style={{ height: fit.offset }} />
+        <div
+          className="st-lbox-text"
+          data-testid="board-text"
+          data-valign={board.vAlign ?? 'middle'}
+          style={{ fontSize: fit.px, fontWeight: board.bold ? 800 : 500, textAlign: board.align, lineHeight: LINE_HEIGHT }}
+        >
+          {board.text}
+        </div>
       </div>
     </div>
   );

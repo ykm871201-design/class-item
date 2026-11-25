@@ -433,46 +433,42 @@ await check('교사 창 알림 영역 숨김 + 학생 창 숨김 상태에서 �
   await sw.screenshot({ path: path.join(shots, '05-student-split-timer.png') });
 });
 
+// 함께 보기에서 칠판 글자의 실제 줄 위치를 재서 타이머와 겹치는지·잘리는지 확인
+const splitMeasure = () => {
+  const t = document.querySelector('[data-testid=board-text]');
+  const box = t.parentElement.getBoundingClientRect();
+  const tr = document.querySelector('[data-testid=split-timer]').getBoundingClientRect();
+  const range = document.createRange();
+  range.selectNodeContents(t);
+  const rects = [...range.getClientRects()].filter((r) => r.width > 0.5);
+  const overlap = rects.some((b) => !(b.right <= tr.left + 0.5 || b.left >= tr.right - 0.5 || b.bottom <= tr.top + 0.5 || b.top >= tr.bottom - 0.5));
+  const inside = rects.every((b) => b.left >= box.left - 1 && b.right <= box.right + 1 && b.top >= box.top - 1 && b.bottom <= box.bottom + 1);
+  const digits = document.querySelector('[data-testid=timer-digits]').getBoundingClientRect();
+  const digitsInside = digits.left >= tr.left - 1 && digits.right <= tr.right + 1 && digits.top >= tr.top - 1 && digits.bottom <= tr.bottom + 1;
+  return { overlap, inside, digitsInside, lines: new Set(rects.map((r) => Math.round(r.top))).size, len: t.textContent.length };
+};
+
 await check('함께 보기: 긴 칠판 문구가 타이머 영역에 가려지거나 잘리지 않음', async () => {
   const sw = await studentWin(app);
-  const r = await sw.evaluate(() => {
-    const t = document.querySelector('[data-testid=board-text]');
-    const span = t.querySelector('span');
-    const tr = document.querySelector('[data-testid=split-timer]').getBoundingClientRect();
-    const br = span.getBoundingClientRect();
-    const area = document.querySelector('[data-testid=split-board]').getBoundingClientRect();
-    const overlap = !(br.right <= tr.left || br.left >= tr.right || br.bottom <= tr.top || br.top >= tr.bottom);
-    return { overlap, inside: br.left >= area.left - 1 && br.right <= area.right + 1 && br.top >= area.top - 1 && br.bottom <= area.bottom + 1, overflow: t.scrollHeight > t.clientHeight + 1, len: span.textContent.length };
-  });
-  assert(!r.overlap, '칠판 글자가 타이머와 겹침');
-  assert(r.inside && !r.overflow, '칠판 글자가 영역 밖으로 나감 ' + JSON.stringify(r));
+  const r = await sw.evaluate(splitMeasure);
+  assert(!r.overlap, '칠판 글자가 타이머와 겹침 ' + JSON.stringify(r));
+  assert(r.inside, '칠판 글자가 영역 밖으로 나감 ' + JSON.stringify(r));
   assert(r.len === longText.length, '문구가 잘림');
 });
 
 await check('함께 보기: 여러 해상도·화면 배율(150%)에서도 겹침·잘림 없음', async () => {
   const sw = await studentWin(app);
-  const measure = () =>
-    sw.evaluate(() => {
-      const t = document.querySelector('[data-testid=board-text]');
-      const span = t.querySelector('span');
-      const tr = document.querySelector('[data-testid=split-timer]').getBoundingClientRect();
-      const br = span.getBoundingClientRect();
-      const digits = document.querySelector('[data-testid=timer-digits]').getBoundingClientRect();
-      const overlap = !(br.right <= tr.left || br.left >= tr.right || br.bottom <= tr.top || br.top >= tr.bottom);
-      const digitsInside = digits.left >= tr.left - 1 && digits.right <= tr.right + 1 && digits.top >= tr.top - 1 && digits.bottom <= tr.bottom + 1;
-      return { overlap, overflow: t.scrollHeight > t.clientHeight + 1 || t.scrollWidth > t.clientWidth + 1, digitsInside, vw: innerWidth, vh: innerHeight };
-    });
   const sizes = [[1280, 720], [1024, 768], [1366, 768], [1920, 1200]];
   for (const [w, h] of sizes) {
     await app.evaluate(({}, [w, h]) => { const win = globalThis.__ct.student.win; win.setFullScreen(false); win.setContentSize(w, h); }, [w, h]);
     await sleep(500);
-    const r = await measure();
-    assert(!r.overlap && !r.overflow && r.digitsInside, `${w}x${h}: ` + JSON.stringify(r));
+    const r = await sw.evaluate(splitMeasure);
+    assert(!r.overlap && r.inside && r.digitsInside, `${w}x${h}: ` + JSON.stringify(r));
   }
   await app.evaluate(() => globalThis.__ct.student.win.webContents.setZoomFactor(1.5));
   await sleep(500);
-  const z = await measure();
-  assert(!z.overlap && !z.overflow && z.digitsInside, '150%: ' + JSON.stringify(z));
+  const z = await sw.evaluate(splitMeasure);
+  assert(!z.overlap && z.inside && z.digitsInside, '150%: ' + JSON.stringify(z));
   await sw.screenshot({ path: path.join(shots, '05b-student-split-1920x1200-150pct.png') });
   await app.evaluate(() => { globalThis.__ct.student.win.webContents.setZoomFactor(1); globalThis.__ct.student.currentDisplayId = null; globalThis.__ct.student.show(true); });
   await sleep(300);
@@ -548,6 +544,36 @@ await check('표시 방식 전환 시 남은 시간·일시정지 유지', async
   const t2 = await app.evaluate(() => globalThis.__ct.ctl.rt.timer);
   assert(t2.status === 'running' && Math.abs(t2.endAt - Date.now() - before) < 1500, '계속 후 남은 시간 불일치');
   await dispatch(app, { type: 'timer/close' });
+});
+
+await check('함께 보기: 두세 줄 문구가 타이머 위 오른쪽 빈 곳까지 써서 불필요하게 줄바꿈되지 않음 (세로 정렬 포함)', async () => {
+  const sw = await studentWin(app);
+  const text = '1. 뒴뒴수학 36~38쪽 풀기\n2.아침독서';
+  await dispatch(app, { type: 'board/updateDraft', patch: { text, autoFit: true, align: 'left', vAlign: 'top' } });
+  await dispatch(app, { type: 'board/publish' });
+  await dispatch(app, { type: 'timer/start', durationSec: 300, activity: '아침시간', sound: 'none', volume: 0, mode: 'split' });
+  await sw.waitForSelector('[data-testid=split-timer]');
+  await sleep(400);
+  const r = await sw.evaluate(splitMeasure);
+  await sw.screenshot({ path: path.join(shots, '25-student-split-two-lines.png') });
+  assert(r.lines === 2 && !r.overlap && r.inside, '두 줄 문구가 더 많은 줄로 나뉨: ' + JSON.stringify(r));
+  for (const v of ['middle', 'bottom']) {
+    await dispatch(app, { type: 'board/updateDraft', patch: { vAlign: v } });
+    await dispatch(app, { type: 'board/publish' });
+    await sleep(400);
+    const q = await sw.evaluate(splitMeasure);
+    assert(!q.overlap && q.inside, v + ': ' + JSON.stringify(q));
+  }
+  const three = '1. 뒴뒴수학 36~38쪽 풀기\n2. 아침독서 20분\n3. 알림장 쓰고 가방 정리하기';
+  await dispatch(app, { type: 'board/updateDraft', patch: { text: three, vAlign: 'top' } });
+  await dispatch(app, { type: 'board/publish' });
+  await sleep(400);
+  const r3 = await sw.evaluate(splitMeasure);
+  assert(!r3.overlap && r3.inside && r3.lines <= 4, '세 줄 문구: ' + JSON.stringify(r3));
+  await sw.screenshot({ path: path.join(shots, '26-student-split-three-lines.png') });
+  await dispatch(app, { type: 'timer/close' });
+  await dispatch(app, { type: 'board/updateDraft', patch: { text: longText, align: 'center', vAlign: 'middle' } });
+  await dispatch(app, { type: 'board/publish' });
 });
 
 await check('종료 예고음: 6초 타이머 · 10초 전부터 → 1초마다 예고음 후 종료 알림음 1번', async () => {

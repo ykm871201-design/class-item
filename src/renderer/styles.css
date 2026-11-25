@@ -33,6 +33,8 @@ body.student.hide-cursor, body.student.hide-cursor * { cursor: none; }
 .st-board-text { flex: 1; display: flex; align-items: center; white-space: pre-wrap; word-break: keep-all; overflow-wrap: anywhere; min-width: 0; }
 .st-board-text > span { display: block; }
 .board-text-measure { font-family: var(--font); }
+.st-lbox { overflow: hidden; }
+.st-lbox-text { white-space: pre-wrap; word-break: keep-all; overflow-wrap: anywhere; }
 
 .st-split { position: relative; width: 100%; height: 100%; }
 .st-split-board { position: absolute; left: 0; top: 0; overflow: hidden; }
