@@ -1,7 +1,7 @@
 import { createRoot } from 'react-dom/client';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { FullState, SoundId } from '../../shared/types';
-import { StudentScreen } from '../common/StudentScreen';
+import { ScaledStudentScreen } from '../common/StudentScreen';
 import { StateCtx, act, api, dismissToast, toast, useAppState, useToasts } from './api';
 import { playSound } from './sound';
 import { nextRun } from '../../shared/schedule';
@@ -162,7 +162,7 @@ function SidePanel({ setTab }: { setTab: (t: Tab) => void }) {
     <aside className="t-side">
       <h3>학생 화면 미리보기</h3>
       <div className="t-preview" data-testid="teacher-preview">
-        <StudentScreen view={v} />
+        <ScaledStudentScreen view={v} />
       </div>
       <div className="t-preview-note">
         지금 학생 화면: <b>{desc}</b>

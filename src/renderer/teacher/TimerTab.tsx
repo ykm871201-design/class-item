@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import type { SoundId, TimerDisplayMode } from '../../shared/types';
+import type { SoundId, StudentBoardView, StudentView, TimerDisplayMode } from '../../shared/types';
+import { ScaledStudentScreen } from '../common/StudentScreen';
 import { SOUNDS } from '../../shared/defaults';
 import { formatClock } from '../../shared/util';
 import { useNow } from '../common/hooks';
@@ -40,6 +41,38 @@ export function ModePicker({ mode, onChange }: { mode: TimerDisplayMode; onChang
       <button className={mode === 'full' ? 'on' : ''} onClick={() => onChange('full')}>
         전체 화면 타이머
       </button>
+    </div>
+  );
+}
+
+/**
+ * 표시 방식 선택 + 학생 화면 미리보기.
+ * 두 방식을 실제 학생 화면 모습(현재 학생 화면에 표시된 칠판 내용 기준)으로 나란히 보여 주고, 눌러서 고른다.
+ */
+export function ModePreviewPicker({ mode, onChange, board, durationSec, activity }: { mode: TimerDisplayMode; onChange: (m: TimerDisplayMode) => void; board: StudentBoardView; durationSec: number; activity: string }) {
+  const options: { id: TimerDisplayMode; label: string; desc: string }[] = [
+    { id: 'split', label: '칠판 + 타이머 함께 보기', desc: '칠판은 그대로, 오른쪽 아래에 타이머' },
+    { id: 'full', label: '전체 화면 타이머', desc: '타이머만 화면 가득' },
+  ];
+  const ms = Math.max(1, durationSec) * 1000;
+  return (
+    <div className="mode-previews" data-testid="mode-previews">
+      {options.map((o) => {
+        // 미리보기는 멈춘 그림으로 보여 준다 (status 'idle' → 남은 시간 = 전체 시간)
+        const view: StudentView = { base: 'board', board, seating: null, picker: null, timer: { status: 'idle', durationMs: ms, endAt: 0, remainingMs: ms, activity, mode: o.id } };
+        return (
+          <button key={o.id} type="button" className={`mode-preview ${mode === o.id ? 'on' : ''}`} onClick={() => onChange(o.id)} data-mode={o.id} aria-pressed={mode === o.id}>
+            <div className="mode-preview-screen">
+              <ScaledStudentScreen view={view} />
+            </div>
+            <div className="mode-preview-label">
+              {mode === o.id ? '● ' : '○ '}
+              {o.label}
+            </div>
+            <div className="small muted">{o.desc}</div>
+          </button>
+        );
+      })}
     </div>
   );
 }
@@ -110,11 +143,13 @@ export function TimerTab() {
           </button>
           {active && (t.shown ? <button className="btn" onClick={() => act('timer/setShown', { shown: false })}>학생 화면에서 숨기기</button> : <button className="btn" onClick={() => act('timer/setShown', { shown: true })}>학생 화면에 다시 표시</button>)}
         </div>
-        <div className="row" style={{ marginTop: 14 }}>
-          <span className="field-label">표시 방식</span>
-          <ModePicker mode={active ? t.mode : st.timerDisplayMode} onChange={(m) => (active ? act('timer/setMode', { mode: m }) : setDefaults({ timerDisplayMode: m }))} />
-          <span className="small muted">진행 중에도 바꿀 수 있으며 남은 시간은 유지됩니다.</span>
-        </div>
+        {active && (
+          <div className="row" style={{ marginTop: 14 }}>
+            <span className="field-label">표시 방식</span>
+            <ModePicker mode={t.mode} onChange={(m) => act('timer/setMode', { mode: m })} />
+            <span className="small muted">진행 중에도 바꿀 수 있으며 남은 시간은 유지됩니다. 오른쪽 ‘학생 화면 미리보기’에 바로 보입니다.</span>
+          </div>
+        )}
       </div>
 
       <div className="card">
@@ -147,6 +182,10 @@ export function TimerTab() {
           </button>
         </div>
         <SoundPicker sound={st.timerSound} volume={st.timerVolume} onChange={(s, v) => setDefaults({ timerSound: s, timerVolume: v })} />
+        <div className="field-label" style={{ marginTop: 14 }}>
+          표시 방식 <span className="small muted" style={{ fontWeight: 400 }}>— 눌러서 고르세요. 지금 학생 화면에 표시된 칠판 내용으로 미리 보여 줍니다.</span>
+        </div>
+        <ModePreviewPicker mode={st.timerDisplayMode} onChange={(m) => setDefaults({ timerDisplayMode: m })} board={data.boardPublished} durationSec={total} activity={activity} />
         <p className="small muted" style={{ marginTop: 12 }}>
           시간이 끝나면 ‘00:00 · 시간이 끝났어요!’가 표시되고 알림음이 한 번 울립니다. 종료 화면은 ‘종료 화면 닫기’를 누르거나 다른 기능을 학생 화면에 띄울 때까지 유지됩니다.
         </p>

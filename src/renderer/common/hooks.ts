@@ -6,8 +6,9 @@ export function useSize<T extends HTMLElement>(): [React.RefObject<T | null>, { 
   useLayoutEffect(() => {
     const el = ref.current;
     if (!el) return;
+    // 확대·축소(transform) 영향을 받지 않는 실제 배치 크기를 쓴다 (축소 미리보기에서도 실제 화면과 같은 계산)
     const update = () => {
-      const r = el.getBoundingClientRect();
+      const r = { width: el.offsetWidth, height: el.offsetHeight };
       setSize((s) => (Math.abs(s.w - r.width) < 0.5 && Math.abs(s.h - r.height) < 0.5 ? s : { w: r.width, h: r.height }));
     };
     update();

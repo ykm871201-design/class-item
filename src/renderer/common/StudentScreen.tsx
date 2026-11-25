@@ -212,3 +212,21 @@ function PickerBoard({ p }: { p: StudentPickerView }) {
     </div>
   );
 }
+
+/**
+ * 교사용 미리보기: 실제 학생 화면 크기(기본 1920×1080)로 그린 뒤 축소해서 보여 준다.
+ * 작은 크기에서 직접 그리면 글자 맞춤·배치 계산이 달라질 수 있어, 실제 화면과 똑같은 모습을 보장하기 위함.
+ */
+export function ScaledStudentScreen({ view, refW = 1920, refH = 1080 }: { view: StudentView; refW?: number; refH?: number }) {
+  const [ref, size] = useSize<HTMLDivElement>();
+  const k = size.w > 0 ? size.w / refW : 0;
+  return (
+    <div ref={ref} style={{ position: 'relative', width: '100%', height: '100%', overflow: 'hidden' }}>
+      {k > 0 && (
+        <div style={{ position: 'absolute', left: 0, top: 0, width: refW, height: refH, transform: `scale(${k})`, transformOrigin: '0 0' }}>
+          <StudentScreen view={view} />
+        </div>
+      )}
+    </div>
+  );
+}

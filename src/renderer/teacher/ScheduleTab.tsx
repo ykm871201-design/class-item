@@ -5,7 +5,7 @@ import { SOUNDS } from '../../shared/defaults';
 import { WEEKDAY_KO, formatClock, formatDateTimeKo, localDateKey, pad2 } from '../../shared/util';
 import { act, api, toast, useAppState } from './api';
 import { useNow } from '../common/hooks';
-import { ACTIVITY_SUGGESTIONS, ModePicker, SoundPicker } from './TimerTab';
+import { ACTIVITY_SUGGESTIONS, ModePreviewPicker, SoundPicker } from './TimerTab';
 
 const DAY_ORDER = [1, 2, 3, 4, 5, 6, 0];
 
@@ -161,6 +161,7 @@ export function ScheduleTab() {
 }
 
 function Editor({ s, setS, err, onSave, onCancel }: { s: Schedule; setS: (s: Schedule) => void; err: string | null; onSave: () => void; onCancel: () => void }) {
+  const board = useAppState().data.boardPublished;
   const set = (p: Partial<Schedule>) => setS({ ...s, ...p });
   const min = Math.floor(s.durationSec / 60);
   const sec = s.durationSec % 60;
@@ -229,10 +230,10 @@ function Editor({ s, setS, err, onSave, onCancel }: { s: Schedule; setS: (s: Sch
           </button>
         ))}
       </div>
-      <div className="row">
-        <span className="field-label">표시 방식</span>
-        <ModePicker mode={s.displayMode} onChange={(m) => set({ displayMode: m })} />
+      <div className="field-label" style={{ marginTop: 10 }}>
+        표시 방식 <span className="small muted" style={{ fontWeight: 400 }}>— 예약 시각에 학생 화면이 이렇게 보입니다 (지금 학생 화면에 표시된 칠판 내용 기준). 눌러서 고르세요.</span>
       </div>
+      <ModePreviewPicker mode={s.displayMode} onChange={(m) => set({ displayMode: m })} board={board} durationSec={s.durationSec} activity={s.activity} />
       <SoundPicker sound={s.sound} volume={s.volume} onChange={(sound, volume) => set({ sound, volume })} />
       {err && <div className="alert err">{err}</div>}
       <div className="row" style={{ marginTop: 12 }}>

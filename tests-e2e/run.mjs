@@ -224,6 +224,20 @@ await check('예약 등록(교사 UI) — 다음 실행 시각 표시', async ()
   assert(next.includes(schedTime), next);
 });
 
+await check('예약 편집: 표시 방식별 학생 화면 미리보기 (칠판+타이머 / 전체 화면)', async () => {
+  await teacher.click('[data-testid=schedule-new]');
+  const ed = teacher.locator('[data-testid=schedule-editor]');
+  const split = ed.locator('.mode-preview[data-mode=split]');
+  const full = ed.locator('.mode-preview[data-mode=full]');
+  assert((await split.locator('[data-testid=split-board]').count()) === 1 && (await split.locator('[data-testid=split-timer]').count()) === 1, '함께 보기 미리보기에 칠판·타이머가 없음');
+  assert((await split.textContent()).includes('발표 자료를 만듭니다'), '미리보기에 현재 칠판 내용이 없음');
+  assert((await full.locator('.st-timer-full').count()) === 1 && (await full.locator('[data-testid=split-board]').count()) === 0, '전체 화면 미리보기가 타이머만 보여 주지 않음');
+  await full.click();
+  assert((await full.getAttribute('aria-pressed')) === 'true' && (await split.getAttribute('aria-pressed')) === 'false', '선택이 바뀌지 않음');
+  await ed.screenshot({ path: path.join(shots, '13-schedule-mode-preview.png') });
+  await ed.locator('button', { hasText: '취소' }).click();
+});
+
 await check('같은 시각 예약은 저장 전 충돌 안내', async () => {
   const r = await dispatch(app, { type: 'schedule/save', schedule: { id: '', name: '중복', enabled: true, time: schedTime, durationSec: 60, repeat: 'weekly', date: '', days: [0, 1, 2, 3, 4, 5, 6], activity: '', sound: 'chime', volume: 50, displayMode: 'full', createdAt: 0 } });
   assert(!r.ok && r.error.includes('같은 시각'), JSON.stringify(r));

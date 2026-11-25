@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { BoardStyle, StudentView } from '../../shared/types';
 import { BG_COLORS, BOARD_THEMES, TEXT_COLORS } from '../../shared/defaults';
-import { StudentScreen } from '../common/StudentScreen';
+import { ScaledStudentScreen } from '../common/StudentScreen';
 import { act, api, useAppState } from './api';
 
 export function BoardTab() {
@@ -169,7 +169,7 @@ export function BoardTab() {
               편집 중 미리보기 <span className="hint">{live ? '실시간 반영 중 — 학생 화면과 같습니다' : '학생에게는 보이지 않습니다'}</span>
             </h2>
             <div className="draft-preview">
-              <StudentScreen view={draftView} />
+              <ScaledStudentScreen view={draftView} />
             </div>
           </div>
           <div className="card">
