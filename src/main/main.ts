@@ -1,5 +1,5 @@
 // Electron 메인 프로세스: 창·디스플레이·알림 영역·예약 감시·IPC
-import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, Notification, powerMonitor, screen, shell, Tray } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, Notification, powerMonitor, powerSaveBlocker, screen, shell, Tray } from 'electron';
 import fs from 'node:fs';
 import path from 'node:path';
 import { Store } from './store';
@@ -32,6 +32,19 @@ let quitting = false;
 const startHidden = process.argv.includes('--hidden');
 
 const asset = (f: string) => path.join(__dirname, '..', 'assets', f);
+
+/** 예약·학생 화면 진단 기록: %APPDATA%\ClassroomTools\schedule-log.txt */
+function diag(msg: string): void {
+  try {
+    const f = path.join(app.getPath('userData'), 'schedule-log.txt');
+    if (fs.existsSync(f) && fs.statSync(f).size > 512 * 1024) fs.renameSync(f, f + '.old');
+    const d = new Date();
+    const ts = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')} ${d.toTimeString().slice(0, 8)}`;
+    fs.appendFileSync(f, `[${ts}] ${msg}\n`, 'utf8');
+  } catch {
+    /* 진단 기록 실패는 무시 */
+  }
+}
 
 // ---------------- 학생 창 관리 ----------------
 class StudentWindow {
@@ -84,6 +97,16 @@ class StudentWindow {
     return w;
   }
 
+  /** 숨김·최소화 상태에서 확실히 다시 보이게 한다 (포커스는 가능한 한 빼앗지 않음) */
+  private reveal(w: BrowserWindow, inactive: boolean): void {
+    if (!w.isVisible()) inactive ? w.showInactive() : w.show();
+    if (w.isMinimized()) {
+      // Windows에서 최소화된 창은 showInactive만으로 복원되지 않는 경우가 있어 restore로 확실히 복원
+      w.restore();
+      if (!w.isVisible()) w.showInactive();
+    }
+  }
+
   show(inactive: boolean): boolean {
     const d = this.resolve();
     if (d) {
@@ -98,23 +121,27 @@ class StudentWindow {
           if (w.isFullScreen()) w.setFullScreen(false);
           w.setBounds(bounds);
         }
-        if (w.isMinimized() || !w.isVisible()) inactive ? w.showInactive() : w.show();
+        this.reveal(w, inactive);
         if (!w.isFullScreen()) w.setFullScreen(true);
       } else {
         if (this.currentDisplayId !== d.id || !w.isVisible()) {
           const wa = screen.getAllDisplays().find((x) => x.id === d.id)?.workArea ?? bounds;
           if (this.currentDisplayId !== d.id) w.setBounds({ x: wa.x + Math.round(wa.width * 0.1), y: wa.y + Math.round(wa.height * 0.1), width: Math.round(wa.width * 0.8), height: Math.round(wa.height * 0.8) });
         }
-        if (w.isMinimized() || !w.isVisible()) inactive ? w.showInactive() : w.show();
+        this.reveal(w, inactive);
       }
       this.currentDisplayId = d.id;
       this.applyTopmost(this.topmost);
-      return true;
+      const ok = w.isVisible() && !w.isMinimized();
+      diag(`학생 창 표시 (${inactive ? '포커스 유지' : '일반'}) → 디스플레이 ${d.id} ${d.width}x${d.height}@${d.x},${d.y} · visible=${w.isVisible()} minimized=${w.isMinimized()} fullscreen=${w.isFullScreen()} top=${w.isAlwaysOnTop()}`);
+      return ok;
     }
     if (this.mode === 'preview' && this.win && !this.win.isDestroyed()) {
-      if (this.win.isMinimized() || !this.win.isVisible()) inactive ? this.win.showInactive() : this.win.show();
+      this.reveal(this.win, inactive);
+      diag('학생 창 표시 → 미리보기 창');
       return true;
     }
+    diag(`학생 창 표시 실패: 학생용 디스플레이 없음 (연결된 디스플레이 ${this.displays().length}개)`);
     return false;
   }
 
@@ -128,14 +155,13 @@ class StudentWindow {
     w.show();
   }
 
-  /** 숨기기: 맨 위 표시를 풀고 최소화한 뒤 숨겨서 다른 창이 다시 보이게 한다 */
+  /** 숨기기: 맨 위 표시를 풀고 창을 화면에서 내려 다른 창이 다시 보이게 한다 */
   hide(): void {
     this.wanted = false;
     const w = this.win;
     if (w && !w.isDestroyed()) {
       w.setAlwaysOnTop(false);
-      if (w.isVisible() && !w.isMinimized()) w.minimize();
-      w.hide();
+      w.hide(); // 최소화와 같은 효과. 최소화 상태로 두면 예약 시 다시 띄우지 못하는 경우가 있어 숨김만 사용
     }
     if (this.mode === 'preview') this.mode = 'none';
   }
@@ -274,6 +300,7 @@ function showTeacher(): void {
 
 function quitApp(): void {
   quitting = true;
+  diag('앱 완전 종료');
   if (ctl) store.save(ctl.data);
   store.flush();
   app.quit();
@@ -325,6 +352,11 @@ function init(): void {
     },
   };
   ctl = new Controller(data, ports, { userDataPath: app.getPath('userData'), appVersion: app.getVersion() });
+  const origLog = ctl.log.bind(ctl);
+  ctl.log = (kind, message, extra) => {
+    diag(`[예약 ${kind}] ${message}`);
+    origLog(kind, message, extra);
+  };
   if (store.loadWarning) ctl.notice('warn', store.loadWarning);
   store.save(ctl.data); // 처음 실행 시에도 저장 파일을 바로 만든다
 
@@ -349,9 +381,22 @@ function init(): void {
   });
 
   // 예약 감시: 창 표시 여부와 무관하게 메인 프로세스에서 동작
+  diag(`앱 시작 v${app.getVersion()} · 예약 ${ctl.data.schedules.length}개(켜짐 ${ctl.data.schedules.filter((x) => x.enabled).length}) · 디스플레이 ${screen.getAllDisplays().length}개 · 시간대 ${Intl.DateTimeFormat().resolvedOptions().timeZone}`);
   ctl.checkSchedules(); // 앱 재실행 시 놓친 예약 기록 (오래된 예약은 실행하지 않음)
-  setInterval(() => ctl.tick(), 250);
-  powerMonitor.on('resume', () => ctl.checkSchedules());
+  // 창이 숨겨져 있어도 Windows가 백그라운드 앱을 일시 중단·지연시키지 않게 한다 (화면 꺼짐·절전은 막지 않음)
+  powerSaveBlocker.start('prevent-app-suspension');
+  let lastTick = Date.now();
+  setInterval(() => {
+    const now = Date.now();
+    if (now - lastTick > 30_000) diag(`예약 감시가 ${Math.round((now - lastTick) / 1000)}초 동안 멈춰 있었습니다 (절전·일시 중단 추정)`);
+    lastTick = now;
+    ctl.tick();
+  }, 250);
+  powerMonitor.on('suspend', () => diag('PC 절전 진입'));
+  powerMonitor.on('resume', () => {
+    diag('PC 절전 복귀');
+    ctl.checkSchedules();
+  });
   powerMonitor.on('unlock-screen', () => ctl.checkSchedules());
 
   if (ctl.data.settings.showStudentOnStartup && student.resolve()) student.show(true);
@@ -425,6 +470,12 @@ function registerIpc(): void {
         if (process.platform === 'win32') app.setLoginItemSettings({ openAtLogin: !!a.value, args: ['--hidden'] });
         ctl.changed(true);
         return { ok: true, packaged: app.isPackaged };
+      case 'openDiagLog': {
+        const f = path.join(app.getPath('userData'), 'schedule-log.txt');
+        if (!fs.existsSync(f)) fs.writeFileSync(f, '', 'utf8');
+        shell.openPath(f);
+        return { ok: true };
+      }
       case 'openDataFolder':
         shell.openPath(app.getPath('userData'));
         return { ok: true };

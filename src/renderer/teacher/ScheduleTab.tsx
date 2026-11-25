@@ -4,6 +4,7 @@ import { describeRepeat, nextRun } from '../../shared/schedule';
 import { SOUNDS } from '../../shared/defaults';
 import { WEEKDAY_KO, formatClock, formatDateTimeKo, localDateKey, pad2 } from '../../shared/util';
 import { act, api, toast, useAppState } from './api';
+import { useNow } from '../common/hooks';
 import { ACTIVITY_SUGGESTIONS, ModePicker, SoundPicker } from './TimerTab';
 
 const DAY_ORDER = [1, 2, 3, 4, 5, 6, 0];
@@ -34,6 +35,8 @@ export function ScheduleTab() {
   const [edit, setEdit] = useState<Schedule | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const unack = data.scheduleLog.filter((e) => !e.acknowledged);
+  const clock = useNow(1000);
+  const cd = new Date(clock);
 
   const save = async () => {
     if (!edit) return;
@@ -51,6 +54,15 @@ export function ScheduleTab() {
     <div>
       <h1 className="t-title">예약 타이머</h1>
       <p className="t-sub">정한 시각이 되면 학생 화면을 띄우고 타이머를 자동으로 시작합니다. 앱이 실행 중일 때(알림 영역 포함)만 동작하며, 앱을 완전히 종료했거나 PC가 꺼져 있으면 실행되지 않습니다.</p>
+
+      <div className="alert info" style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+        <span>
+          이 PC의 현재 시각: <b data-testid="pc-clock">{WEEKDAY_KO[cd.getDay()]}요일 {pad2(cd.getHours())}:{pad2(cd.getMinutes())}:{pad2(cd.getSeconds())}</b> · 예약은 이 시각을 기준으로 실행됩니다.
+        </span>
+        <button className="btn sm" style={{ marginLeft: 'auto' }} onClick={() => api().app({ type: 'openDiagLog' })}>
+          진단 기록 열기
+        </button>
+      </div>
 
       {unack.length > 0 && (
         <div className="alert warn">

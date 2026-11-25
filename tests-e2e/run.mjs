@@ -237,6 +237,12 @@ await check('교사 창 알림 영역 숨김 + 학생 창 숨김 상태에서 �
     }
     const orig = sw.showInactive.bind(sw);
     sw.showInactive = (...a) => (calls.push('student.showInactive'), orig(...a));
+    // Windows에서 '최소화된 창은 showInactive만으로 복원되지 않는' 상황을 흉내 낸다
+    let fakeMin = true;
+    const origMin = sw.isMinimized.bind(sw);
+    sw.isMinimized = () => fakeMin || origMin();
+    const origRestore = sw.restore.bind(sw);
+    sw.restore = (...a) => (calls.push('student.restore'), (fakeMin = false), origRestore(...a));
   });
   await sleep(500);
   assert(!(await swInfo(app)).visible, '학생 창이 숨겨지지 않음');
@@ -248,6 +254,9 @@ await check('교사 창 알림 영역 숨김 + 학생 창 숨김 상태에서 �
   assert(!(await app.evaluate(() => globalThis.__ct.teacherWin.isVisible())), '교사 창이 나타남');
   const calls = await app.evaluate(() => globalThis.__focusCalls);
   assert(calls.includes('student.showInactive'), '학생 창을 포커스 없이 표시하지 않음: ' + calls.join());
+  assert(calls.includes('student.restore'), '최소화 상태에서 복원하지 않음: ' + calls.join());
+  const diagLog = fs.readFileSync(path.join(userData, 'schedule-log.txt'), 'utf8');
+  assert(diagLog.includes('[예약 fired]') && diagLog.includes('학생 창 표시'), '진단 기록이 남지 않음');
   assert(!calls.some((c) => c.startsWith('teacher.') || c === 'student.focus' || c === 'student.show'), '포커스를 빼앗는 호출: ' + calls.join());
   const sw = await studentWin(app);
   await sw.waitForSelector('[data-testid=split-timer]');
