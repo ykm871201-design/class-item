@@ -1,10 +1,11 @@
 // Electron 메인 프로세스: 창·디스플레이·알림 영역·예약 감시·IPC
-import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, Notification, powerMonitor, powerSaveBlocker, screen, shell, Tray } from 'electron';
+import { app, BrowserWindow, dialog, globalShortcut, ipcMain, Menu, nativeImage, Notification, powerMonitor, powerSaveBlocker, screen, shell, Tray } from 'electron';
 import fs from 'node:fs';
 import path from 'node:path';
 import { Store } from './store';
 import { Controller, type Ports } from './controller';
 import { Updater } from './updater';
+import { WidgetManager } from './widget';
 import { resolveStudentDisplay, type DisplayInfo } from '../shared/displays';
 import { validateImport } from '../shared/defaults';
 import type { DisplayRef, Runtime } from '../shared/types';
@@ -28,6 +29,7 @@ if (!app.requestSingleInstanceLock()) {
 let store: Store;
 let ctl: Controller;
 let updater: Updater;
+let widget: WidgetManager;
 let teacherWin: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let quitting = false;
@@ -357,6 +359,7 @@ function createTray(): void {
   const menu = () =>
     Menu.buildFromTemplate([
       { label: '교사용 화면 열기', click: showTeacher },
+      { label: '바탕화면 위젯 보이기/숨기기 (Ctrl+Alt+W)', click: () => widget.toggle() },
       { label: student.status().visible ? '학생 화면 숨기기' : '학생 화면 보이기', click: () => (student.status().visible ? ctl.dispatch({ type: 'student/hide' }) : ctl.dispatch({ type: 'student/show' })) },
       { type: 'separator' },
       { label: '앱 완전 종료 (예약 타이머도 멈춤)', click: quitApp },
@@ -386,6 +389,7 @@ function init(): void {
     },
     broadcast: (state) => {
       if (teacherWin && !teacherWin.isDestroyed()) teacherWin.webContents.send('state', state);
+      widget?.send('state', state);
       student.send(state.studentView);
     },
     studentWindowStatus: () => student.status(),
@@ -442,6 +446,22 @@ function init(): void {
   });
   powerMonitor.on('unlock-screen', () => ctl.checkSchedules());
 
+  // 바탕화면 위젯 보드
+  widget = new WidgetManager(ctl, {
+    preload: path.join(__dirname, 'preload-teacher.js'),
+    html: path.join(__dirname, 'renderer', 'widget.html'),
+    icon: asset('icon.png'),
+    log: diag,
+    isQuitting: () => quitting,
+  });
+  widget.start();
+  if (ctl.data.widget.showOnStartup && !isE2E) widget.show();
+  try {
+    globalShortcut.register('CommandOrControl+Alt+W', () => widget.toggle());
+  } catch {
+    /* 다른 프로그램이 쓰는 단축키면 무시 */
+  }
+
   // 업데이트: 시작 15초 뒤 조용히 한 번 확인 (인터넷이 없으면 아무 일도 없음)
   updater = new Updater(ctl, diag, () => {
     diag('업데이트 설치를 위해 앱 종료');
@@ -452,7 +472,7 @@ function init(): void {
   if (ctl.data.settings.showStudentOnStartup && student.resolve()) student.show(true);
   ctl.changed(false);
 
-  if (isE2E) (globalThis as any).__ct = { ctl, student, get teacherWin() { return teacherWin; }, soundLog, store, updater };
+  if (isE2E) (globalThis as any).__ct = { ctl, student, get teacherWin() { return teacherWin; }, soundLog, store, updater, widget };
 }
 
 const soundLog: { runId: string; sound: string; volume: number; at: number }[] = [];
@@ -462,6 +482,7 @@ app.on('before-quit', () => {
   if (store && ctl) store.save(ctl.data);
   store?.flush();
 });
+app.on('will-quit', () => globalShortcut.unregisterAll());
 app.on('window-all-closed', () => {
   /* 알림 영역에서 계속 실행 */
 });
@@ -533,6 +554,47 @@ function registerIpc(): void {
         return { ok: true };
       case 'updateInstall':
         return updater.install();
+      // ----- 바탕화면 위젯 -----
+      case 'widgetToggle':
+        widget.toggle();
+        return { ok: true };
+      case 'widgetShow':
+        widget.show();
+        return { ok: true };
+      case 'widgetHide':
+        widget.hide();
+        return { ok: true };
+      case 'widgetReset':
+        widget.resetPosition();
+        return { ok: true };
+      case 'calendarAdd':
+        return widget.addCalendar(String(a.name ?? ''), String(a.url ?? ''));
+      case 'calendarUrl':
+        return widget.replaceCalendarUrl(String(a.id), String(a.url ?? ''));
+      case 'calendarRefresh':
+        await widget.refreshCalendars();
+        return { ok: true };
+      case 'weatherRefresh':
+        await widget.refreshWeather();
+        return { ok: true };
+      case 'schoolSearch':
+        return widget.searchSchool(String(a.name ?? ''));
+      case 'schoolSet':
+        ctl.data.widget.school = a.school && a.school.code ? { office: String(a.school.office), code: String(a.school.code), name: String(a.school.name ?? '') } : null;
+        ctl.rt.widget = { ...ctl.rt.widget, meal: null, mealError: undefined };
+        ctl.changed(true);
+        await widget.refreshMeal();
+        return { ok: true };
+      case 'mealRefresh':
+        await widget.refreshMeal(typeof a.date === 'string' ? a.date : undefined);
+        return { ok: true };
+      case 'googleAdd':
+        widget.openGoogleAdd({ title: String(a.title ?? ''), date: String(a.date), time: a.time || undefined });
+        return { ok: true };
+      case 'openTeacher':
+        showTeacher();
+        if (a.tab) teacherWin?.webContents.send('nav', a.tab);
+        return { ok: true };
       case 'openDataFolder':
         shell.openPath(app.getPath('userData'));
         return { ok: true };

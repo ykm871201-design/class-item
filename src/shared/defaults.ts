@@ -1,5 +1,5 @@
 // 기본값과 저장 데이터 정규화·가져오기 검증
-import type { AppData, BoardStyle, ClassRoom, PickerConfig, Schedule, SeatingConfig, SeatLayout, Settings, SoundId, Student } from './types';
+import type { AppData, BoardStyle, ClassRoom, PickerConfig, Schedule, SeatingConfig, SeatLayout, Settings, SoundId, Student, WidgetCardId, WidgetData } from './types';
 import { cleanGroups, cleanLayout, suggestLayout, LIMITS } from './seating';
 import { clamp, newId } from './util';
 import { normalizeWarnFrom } from './timer';
@@ -57,6 +57,49 @@ export function newClass(name: string): ClassRoom {
   return { id: newId('c_'), name, students: [], seating: defaultSeating(), picker: defaultPicker() };
 }
 
+export const WIDGET_CARDS: { id: WidgetCardId; name: string }[] = [
+  { id: 'calendar', name: '달력' },
+  { id: 'agenda', name: '일정 정리 · 할 일' },
+  { id: 'memo', name: '메모' },
+  { id: 'clock', name: '시계 · 교시' },
+  { id: 'weather', name: '날씨 · 미세먼지' },
+  { id: 'meal', name: '급식' },
+  { id: 'timetable', name: '이번 주 시간표' },
+  { id: 'tools', name: '수업 도구' },
+];
+
+export const MEMO_COLORS = ['#fff3a8', '#ffd6e0', '#d3e9ff', '#d8f5c9', '#ece0ff', '#ffe2c2'];
+// 차례로 붙는 캘린더 색 (내 일정 초록·공휴일 빨강과 겹치지 않게, 이웃 색끼리 잘 구분되게)
+export const CALENDAR_COLORS = ['#3b5bdb', '#e67700', '#9c36b5', '#0c8599', '#c2255c', '#5c940d', '#1c7ed6', '#d9480f', '#5f3dc4', '#495057', '#862e9c', '#2b8a3e'];
+export const BOARD_BACKGROUNDS: { id: string; name: string; css: string }[] = [
+  { id: 'sky', name: '하늘', css: 'linear-gradient(160deg, #a5d8ff 0%, #d0ebff 45%, #fff4e6 100%)' },
+  { id: 'forest', name: '숲', css: 'linear-gradient(160deg, #2f9e44 0%, #8ce99a 55%, #e6fcf5 100%)' },
+  { id: 'sunset', name: '노을', css: 'linear-gradient(160deg, #f76707 0%, #ffa8a8 50%, #e5dbff 100%)' },
+  { id: 'night', name: '밤하늘', css: 'linear-gradient(160deg, #1c2541 0%, #3a506b 60%, #5bc0be 100%)' },
+  { id: 'paper', name: '종이', css: 'linear-gradient(160deg, #f8f9fa 0%, #e9ecef 100%)' },
+];
+
+export function defaultWidget(): WidgetData {
+  return {
+    showOnStartup: true,
+    bounds: null,
+    hiddenCards: [],
+    calendars: [],
+    localShowOnStudent: false,
+    holidays: true,
+    holidaysOnStudent: true,
+    localEvents: [],
+    todos: [],
+    memos: [{ id: newId('m_'), title: '', text: '여기에 메모를 적어 보세요', color: MEMO_COLORS[0] }],
+    periods: { firstStart: '09:00', length: 40, breakLen: 10, count: 6, lunchAfter: 4, lunchLen: 50 },
+    timetable: Array.from({ length: 5 }, () => Array.from({ length: 10 }, () => '')),
+    weatherRegion: 'seoul',
+    school: null,
+    glass: true,
+    background: 'sky',
+  };
+}
+
 export function defaultData(): AppData {
   const c = newClass('우리 반');
   return {
@@ -76,6 +119,7 @@ export function defaultData(): AppData {
     lastScheduleCheckAt: 0,
     settings: defaultSettings(),
     studentBase: 'blank',
+    widget: defaultWidget(),
   };
 }
 
@@ -213,6 +257,50 @@ function normSchedule(v: unknown): Schedule | null {
   };
 }
 
+const WIDGET_CARD_IDS = WIDGET_CARDS.map((c) => c.id);
+const timeStr = (v: unknown, d: string) => (typeof v === 'string' && /^\d{1,2}:\d{2}$/.test(v) ? v : d);
+const dateStr = (v: unknown) => (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : null);
+
+function normWidget(v: unknown): WidgetData {
+  const d = defaultWidget();
+  if (!isObj(v)) return d;
+  const p = isObj(v.periods) ? v.periods : {};
+  const b = isObj(v.bounds) ? v.bounds : null;
+  const tt = Array.isArray(v.timetable) ? v.timetable : d.timetable;
+  return {
+    showOnStartup: bool(v.showOnStartup, true),
+    bounds: b && [b.x, b.y, b.width, b.height].every((n) => typeof n === 'number' && Number.isFinite(n)) ? { x: b.x, y: b.y, width: Math.max(480, b.width), height: Math.max(360, b.height) } : null,
+    hiddenCards: arr(v.hiddenCards, (x) => (WIDGET_CARD_IDS.includes(x as WidgetCardId) ? (x as WidgetCardId) : null)),
+    calendars: arr(v.calendars, (c) =>
+      isObj(c) && typeof c.id === 'string'
+        ? { id: c.id, name: str(c.name, '구글 캘린더').slice(0, 30), color: color(c.color, CALENDAR_COLORS[0]), enabled: bool(c.enabled, true), showOnStudent: bool(c.showOnStudent, false), urlEnc: str(c.urlEnc, '') }
+        : null,
+    ),
+    localShowOnStudent: bool(v.localShowOnStudent, false),
+    holidays: bool(v.holidays, true),
+    holidaysOnStudent: bool(v.holidaysOnStudent, true),
+    localEvents: arr(v.localEvents, (e) => {
+      if (!isObj(e) || typeof e.title !== 'string' || !dateStr(e.date)) return null;
+      return { id: str(e.id, newId('e_')), title: e.title.slice(0, 100), date: dateStr(e.date)!, time: typeof e.time === 'string' && /^\d{2}:\d{2}$/.test(e.time) ? e.time : undefined, endDate: dateStr(e.endDate) ?? undefined };
+    }),
+    todos: arr(v.todos, (t) => (isObj(t) && typeof t.text === 'string' ? { id: str(t.id, newId('t_')), text: t.text.slice(0, 200), date: dateStr(t.date) ?? '2000-01-01', done: bool(t.done, false), doneDate: dateStr(t.doneDate) ?? undefined } : null)),
+    memos: arr(v.memos, (m) => (isObj(m) ? { id: str(m.id, newId('m_')), title: str(m.title, '').slice(0, 40), text: str(m.text, '').slice(0, 3000), color: color(m.color, MEMO_COLORS[0]) } : null)),
+    periods: {
+      firstStart: timeStr(p.firstStart, d.periods.firstStart),
+      length: clamp(Math.round(num(p.length, 40)), 10, 120),
+      breakLen: clamp(Math.round(num(p.breakLen, 10)), 0, 60),
+      count: clamp(Math.round(num(p.count, 6)), 1, 10),
+      lunchAfter: clamp(Math.round(num(p.lunchAfter, 4)), 0, 10),
+      lunchLen: clamp(Math.round(num(p.lunchLen, 50)), 0, 120),
+    },
+    timetable: Array.from({ length: 5 }, (_, i) => Array.from({ length: 10 }, (_, j) => (Array.isArray(tt[i]) && typeof tt[i][j] === 'string' ? (tt[i][j] as string).slice(0, 20) : ''))),
+    weatherRegion: str(v.weatherRegion, 'seoul'),
+    school: isObj(v.school) && typeof v.school.code === 'string' && typeof v.school.office === 'string' ? { office: v.school.office, code: v.school.code, name: str(v.school.name, '') } : null,
+    glass: bool(v.glass, true),
+    background: str(v.background, 'sky'),
+  };
+}
+
 export function normalizeData(raw: unknown): AppData {
   const d = defaultData();
   if (!isObj(raw)) return d;
@@ -250,7 +338,8 @@ export function normalizeData(raw: unknown): AppData {
       timerActivity: str(s.timerActivity, ''),
       lastTimerSec: clamp(num(s.lastTimerSec, 300), 1, 180 * 60),
     },
-    studentBase: ['blank', 'board', 'seating'].includes(raw.studentBase as string) ? (raw.studentBase as AppData['studentBase']) : 'blank',
+    studentBase: ['blank', 'board', 'seating', 'agenda'].includes(raw.studentBase as string) ? (raw.studentBase as AppData['studentBase']) : 'blank',
+    widget: normWidget(raw.widget),
   };
   if (!data.classes.some((c) => c.id === data.currentClassId)) data.currentClassId = data.classes[0].id;
   return data;

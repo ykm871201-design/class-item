@@ -49,16 +49,31 @@ const updServer = http.createServer((req, res) => {
   if (req.url === '/latest') {
     res.setHeader('content-type', 'application/json');
     res.end(JSON.stringify({ tag_name: 'v99.0.0', published_at: new Date().toISOString(), body: '테스트용 새 버전', assets: [{ name: 'ClassroomTools-Setup-99.0.0.exe', size: fakeExe.length, digest: fakeDigest, browser_download_url: `http://127.0.0.1:${updServer.address().port}/setup.exe` }] }));
+  } else if (req.url === '/cal.ics' || req.url === '/private.ics') {
+    const d = (n, h) => { const x = new Date(); x.setDate(x.getDate() + n); const p = (v) => String(v).padStart(2, '0'); return h === undefined ? `${x.getFullYear()}${p(x.getMonth() + 1)}${p(x.getDate())}` : `${x.getFullYear()}${p(x.getMonth() + 1)}${p(x.getDate())}T${p(h)}0000`; };
+    res.setHeader('content-type', 'text/calendar; charset=utf-8');
+    res.end(req.url === '/cal.ics'
+      ? `BEGIN:VCALENDAR\r\nX-WR-CALNAME:학교 일정\r\nBEGIN:VEVENT\r\nUID:1\r\nDTSTART;VALUE=DATE:${d(0)}\r\nDTEND;VALUE=DATE:${d(1)}\r\nSUMMARY:공문 제출\r\nEND:VEVENT\r\nBEGIN:VEVENT\r\nUID:2\r\nDTSTART;TZID=Asia/Seoul:${d(1, 14)}\r\nDTEND;TZID=Asia/Seoul:${d(1, 15)}\r\nSUMMARY:학년 협의회\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n`
+      : `BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nUID:p\r\nDTSTART;VALUE=DATE:${d(0)}\r\nSUMMARY:개인 병원 예약\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n`);
+  } else if (req.url.startsWith('/weather')) {
+    res.end(JSON.stringify({ current: { temperature_2m: 15.2, weather_code: 2 }, daily: { temperature_2m_max: [16.4], temperature_2m_min: [7.1], precipitation_probability_max: [24] } }));
+  } else if (req.url.startsWith('/air')) {
+    res.end(JSON.stringify({ current: { pm10: 25, pm2_5: 12 } }));
+  } else if (req.url.startsWith('/neis/schoolInfo')) {
+    res.end(JSON.stringify({ schoolInfo: [{ head: [] }, { row: [{ ATPT_OFCDC_SC_CODE: 'B10', SD_SCHUL_CODE: '7010000', SCHUL_NM: '서울테스트초등학교', ORG_RDNMA: '서울특별시 어딘가', SCHUL_KND_SC_NM: '초등학교' }] }] }));
+  } else if (req.url.startsWith('/neis/mealServiceDietInfo')) {
+    res.end(JSON.stringify({ mealServiceDietInfo: [{ head: [] }, { row: [{ MMEAL_SC_NM: '중식', DDISH_NM: '귀리밥 (5.6.)<br/>투움바파스타 (2.5.6.13.)<br/>황태미역국 (5.6.9.)<br/>배추김치' }] }] }));
   } else if (req.url === '/setup.exe') {
     res.setHeader('content-length', String(fakeExe.length));
     res.end(fakeExe);
   } else res.writeHead(404).end();
 });
 await new Promise((r) => updServer.listen(0, '127.0.0.1', r));
-const updApi = `http://127.0.0.1:${updServer.address().port}/latest`;
+const updBase = `http://127.0.0.1:${updServer.address().port}`;
+const updApi = `${updBase}/latest`;
 
 async function launch() {
-  const app = await electron.launch({ executablePath: electronPath, args: ['--no-sandbox', root], env: { ...process.env, CT_E2E: '1', CT_USER_DATA: userData, TZ: process.env.TZ, CT_UPDATE_API: updApi, CT_UPDATE_NO_INSTALL: '1' } });
+  const app = await electron.launch({ executablePath: electronPath, args: ['--no-sandbox', root], env: { ...process.env, CT_E2E: '1', CT_USER_DATA: userData, TZ: process.env.TZ, CT_UPDATE_API: updApi, CT_UPDATE_NO_INSTALL: '1', CT_WEATHER_URL: updBase + '/weather', CT_AIR_URL: updBase + '/air', CT_NEIS_URL: updBase + '/neis' } });
   const teacher = await app.firstWindow();
   await teacher.waitForSelector('.t-app');
   return { app, teacher };
@@ -558,6 +573,71 @@ await check('TV 연결 해제 → 학생 창 숨김(교사 화면에 전체 화�
     return i?.visible ? i : null;
   }, 3000, '재연결 후 다시 표시되지 않음');
   assert(info2.bounds.x >= 1920, '재연결 후 위치가 TV가 아님');
+});
+
+const widgetWin = async () => {
+  for (const w of app.windows()) if ((await w.title()) === '교실 도구 위젯') return w;
+  return null;
+};
+
+await check('바탕화면 위젯: 구글 캘린더(iCal) 연결 → 달력·일정, 날씨, 급식, 할 일, 시간표', async () => {
+  await teacher.click('[data-tab=widget]');
+  await teacher.fill('[data-testid=ical-url]', updBase + '/cal.ics');
+  await teacher.click('[data-testid=ical-add]');
+  await until(async () => (await teacher.textContent('[data-testid=calendar-list]')).includes('일정 2개'), 8000, '캘린더 연결 안 됨');
+  await teacher.fill('[data-testid=ical-url]', updBase + '/private.ics');
+  await teacher.locator('input[placeholder="이름 (예: 학교 일정)"]').fill('개인');
+  await teacher.click('[data-testid=ical-add]');
+  await until(async () => (await app.evaluate(() => globalThis.__ct.ctl.data.widget.calendars.map((c) => c.name).join())) === '학교 일정,개인', 8000, '두 번째 캘린더 연결 안 됨');
+  // 학교 일정만 학생 화면에 보이기
+  await teacher.locator('[data-testid=calendar-list] tbody tr').first().locator('td').nth(2).locator('input').click();
+  await until(async () => await app.evaluate(() => globalThis.__ct.ctl.data.widget.calendars[0].showOnStudent), 3000, '학생 화면 보이기 설정 안 됨');
+  // 학교(급식) 고르기
+  await teacher.fill('[data-testid=school-q]', '서울테스트');
+  await teacher.click('[data-testid=school-search]');
+  await teacher.click('[data-testid=school-pick]');
+  // 화면으로 보내는 상태에 캘린더 주소가 없어야 함
+  const st = await teacher.evaluate(() => window.api.getState().then((x) => JSON.stringify(x)));
+  assert(!st.includes('/cal.ics') && !st.includes('/private.ics'), '교사 화면 상태에 iCal 주소가 들어 있음');
+  await teacher.click('[data-testid=widget-toggle]');
+  const ww = await until(() => widgetWin(), 5000, '위젯 창이 없음');
+  await ww.waitForSelector('[data-testid=widget-board]');
+  await until(async () => (await ww.textContent('[data-testid=widget-calendar]')).includes('공문 제출'), 5000, '달력에 구글 일정이 없음');
+  await app.evaluate(() => globalThis.__ct.widget.refreshWeather());
+  await until(async () => (await ww.textContent('[data-card=weather]')).includes('15°'), 5000, '날씨 없음');
+  assert((await ww.textContent('[data-card=weather]')).includes('실외 활동 좋음'), '미세먼지 판단 없음');
+  await until(async () => (await ww.textContent('[data-card=meal]')).includes('귀리밥'), 5000, '급식 없음');
+  // 할 일
+  await ww.fill('[data-testid=todo-input]', '교과서 신청');
+  await ww.press('[data-testid=todo-input]', 'Enter');
+  await until(async () => (await ww.textContent('[data-card=agenda]')).includes('교과서 신청'), 3000, '할 일 추가 안 됨');
+  assert((await ww.textContent('[data-card=agenda]')).includes('학년 협의회'), '이번 주 일정 정리에 구글 일정이 없음');
+  // 시간표 고치기
+  await ww.dblclick('[data-tt="0-0"]');
+  await ww.fill('[data-tt="0-0"] input', '국어');
+  await ww.press('[data-tt="0-0"] input', 'Enter');
+  await until(async () => (await app.evaluate(() => globalThis.__ct.ctl.data.widget.timetable[0][0])) === '국어', 3000, '시간표 저장 안 됨');
+  // 내 일정 추가 (달력 날짜 두 번 누르기)
+  const todayKey = await ww.evaluate(() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; });
+  await ww.dblclick(`[data-date="${todayKey}"]`);
+  await ww.fill('[data-testid=add-event] input[type=text]', '학부모 상담');
+  await ww.locator('[data-testid=add-event] button', { hasText: '내 일정 (이 PC)' }).click();
+  await ww.locator('[data-testid=add-event] button.primary').click();
+  await until(async () => (await ww.textContent('[data-testid=widget-calendar]')).includes('학부모 상담'), 3000, '내 일정 추가 안 됨');
+  await app.evaluate(() => globalThis.__ct.widget.win.setBounds({ x: 0, y: 0, width: 1600, height: 900 }));
+  await sleep(500);
+  await ww.screenshot({ path: path.join(shots, '18-widget-board.png') });
+});
+
+await check('학생 화면에 이번 주 일정: 학생 화면에 보이기로 고른 캘린더만', async () => {
+  await teacher.click('[data-testid=agenda-to-student]');
+  const sw = await studentWin(app);
+  await sw.waitForSelector('[data-testid=student-agenda]', { timeout: 5000 });
+  const t = await sw.textContent('[data-testid=student-agenda]');
+  assert(t.includes('공문 제출') && t.includes('학년 협의회'), '학교 일정이 학생 화면에 없음: ' + t);
+  assert(!t.includes('개인 병원') && !t.includes('학부모 상담'), '개인·내 일정이 학생 화면에 보임');
+  await sw.screenshot({ path: path.join(shots, '19-student-agenda.png') });
+  await dispatch(app, { type: 'student/base', base: 'board' });
 });
 
 await check('교사 화면 스크린샷', async () => {

@@ -1,7 +1,7 @@
 // 학생 화면 렌더링 (학생 창과 교사용 미리보기가 같은 코드를 사용)
 // 입력은 StudentView 뿐이며, 고정 자리 등 교사용 정보는 애초에 전달되지 않는다.
 import { useEffect, useMemo, useState } from 'react';
-import type { StudentBoardView, StudentPickerView, StudentSeatingView, StudentTimerView, StudentView } from '../../shared/types';
+import type { StudentAgendaView, StudentBoardView, StudentPickerView, StudentSeatingView, StudentTimerView, StudentView } from '../../shared/types';
 import { formatClock } from '../../shared/util';
 import { fitFontPx, widestAt100 } from './fit';
 import { useNow, useSize, useFontsReady } from './hooks';
@@ -20,6 +20,7 @@ export function StudentScreen({ view }: { view: StudentView }) {
   else if (view.base === 'board') content = <BoardArea board={view.board} w={size.w} h={size.h} refH={size.h} />;
   else if (view.base === 'seating' && view.seating) content = <SeatingBoard s={view.seating} />;
   else if (view.base === 'picker' && view.picker) content = <PickerBoard p={view.picker} />;
+  else if (view.base === 'agenda' && view.agenda) content = <AgendaBoard a={view.agenda} />;
   else content = <div className="st-blank" />;
   return (
     <div className="st-root" ref={ref} data-fonts={fontsReady ? '1' : '0'} data-base={view.base} data-timer={t ? t.mode : 'none'}>
@@ -216,6 +217,33 @@ export function ScaledStudentScreen({ view, refW = 1920, refH = 1080 }: { view: 
           <StudentScreen view={view} />
         </div>
       )}
+    </div>
+  );
+}
+
+// ---------------- 이번 주 일정 ----------------
+function AgendaBoard({ a }: { a: StudentAgendaView }) {
+  const total = a.days.reduce((n, d) => n + Math.max(1, d.items.length), 0);
+  return (
+    <div className="st-agenda" data-testid="student-agenda">
+      <div className="st-agenda-title">{a.title}</div>
+      <div className="st-agenda-days" style={{ fontSize: `min(4.2cqh, ${Math.max(2.2, 34 / Math.max(8, total + a.days.length * 0.6))}cqh)` }}>
+        {a.days.map((d) => (
+          <div key={d.date} className={`st-agenda-day${d.isToday ? ' today' : ''}`}>
+            <div className={`st-agenda-date${d.holiday ? ' holiday' : ''}`}>{d.label}</div>
+            <div className="st-agenda-items">
+              {d.items.length === 0 && <div className="st-agenda-empty">—</div>}
+              {d.items.map((it, i) => (
+                <div key={i} className="st-agenda-item">
+                  <span className="st-agenda-dot" style={{ background: it.color }} />
+                  {it.time && <span className="st-agenda-time">{it.time}</span>}
+                  <span>{it.title}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

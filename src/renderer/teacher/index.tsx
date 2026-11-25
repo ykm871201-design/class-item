@@ -13,8 +13,9 @@ import { SeatingTab } from './SeatingTab';
 import { PickerTab } from './PickerTab';
 import { RosterTab } from './RosterTab';
 import { SettingsTab } from './SettingsTab';
+import { WidgetTab } from './WidgetTab';
 
-type Tab = 'board' | 'timer' | 'schedule' | 'seating' | 'picker' | 'roster' | 'settings';
+type Tab = 'board' | 'timer' | 'schedule' | 'seating' | 'picker' | 'roster' | 'widget' | 'settings';
 const TABS: { id: Tab; label: string; ico: string }[] = [
   { id: 'board', label: '칠판', ico: '📝' },
   { id: 'timer', label: '타이머', ico: '⏱️' },
@@ -22,6 +23,7 @@ const TABS: { id: Tab; label: string; ico: string }[] = [
   { id: 'seating', label: '자리 배치', ico: '🪑' },
   { id: 'picker', label: '발표 뽑기', ico: '🎯' },
   { id: 'roster', label: '학생 명단', ico: '👥' },
+  { id: 'widget', label: '위젯', ico: '🗓️' },
   { id: 'settings', label: '설정', ico: '⚙️' },
 ];
 
@@ -39,6 +41,7 @@ function App() {
   useEffect(() => {
     api().getState().then(setState);
     const off1 = api().onState(setState);
+    const off3 = api().onNav((t) => setTab(t as Tab));
     // 타이머 종료 알림음: 같은 타이머 실행(runId)에 대해 한 번만 재생
     const off2 = api().onSound((p) => {
       if (played.current.has(p.runId)) return;
@@ -49,6 +52,7 @@ function App() {
     return () => {
       off1();
       off2();
+      off3();
     };
   }, []);
   useEffect(() => {
@@ -82,6 +86,7 @@ function App() {
             {tab === 'seating' && <SeatingTab />}
             {tab === 'picker' && <PickerTab />}
             {tab === 'roster' && <RosterTab />}
+            {tab === 'widget' && <WidgetTab />}
             {tab === 'settings' && <SettingsTab />}
           </main>
           <SidePanel setTab={setTab} />
@@ -157,7 +162,7 @@ function SidePanel({ setTab }: { setTab: (t: Tab) => void }) {
     ? v.timer.mode === 'split'
       ? '칠판 + 타이머 함께 보기'
       : '전체 화면 타이머'
-    : { blank: '빈 화면', board: '칠판', seating: '자리 배치', picker: '발표자 뽑기' }[v.base];
+    : { blank: '빈 화면', board: '칠판', seating: '자리 배치', picker: '발표자 뽑기', agenda: '이번 주 일정' }[v.base];
   const sw = runtime.studentWindow;
   return (
     <aside className="t-side">

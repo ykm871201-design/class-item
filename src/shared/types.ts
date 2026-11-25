@@ -181,7 +181,72 @@ export interface Settings {
   lastTimerSec: number;
 }
 
-export type StudentBase = 'blank' | 'board' | 'seating' | 'picker';
+export type StudentBase = 'blank' | 'board' | 'seating' | 'picker' | 'agenda';
+
+// ----- 바탕화면 위젯 보드 -----
+
+export type WidgetCardId = 'calendar' | 'agenda' | 'memo' | 'clock' | 'weather' | 'meal' | 'timetable' | 'tools';
+
+/** 구글 캘린더(iCal 비공개 주소) 연결. 주소는 암호화해서 저장하고 화면에는 보내지 않는다 */
+export interface CalendarSource {
+  id: string;
+  name: string;
+  color: string;
+  enabled: boolean;
+  showOnStudent: boolean; // 학생 화면 '이번 주 일정'에 보이기
+  urlEnc: string; // 암호화된 iCal 주소 (base64)
+}
+
+export interface LocalEvent {
+  id: string;
+  title: string;
+  date: string; // YYYY-MM-DD
+  time?: string; // HH:MM (없으면 하루 종일)
+  endDate?: string;
+}
+
+export interface Todo {
+  id: string;
+  text: string;
+  date: string; // 만든 날 (끝낼 때까지 다음 날로 넘어감)
+  done: boolean;
+  doneDate?: string;
+}
+
+export interface Memo {
+  id: string;
+  title: string;
+  text: string;
+  color: string;
+}
+
+export interface PeriodConfig {
+  firstStart: string; // 1교시 시작 HH:MM
+  length: number; // 수업 길이(분)
+  breakLen: number; // 쉬는 시간(분)
+  count: number; // 교시 수
+  lunchAfter: number; // 몇 교시 뒤 점심 (0 = 없음)
+  lunchLen: number; // 점심(분)
+}
+
+export interface WidgetData {
+  showOnStartup: boolean;
+  bounds: { x: number; y: number; width: number; height: number } | null;
+  hiddenCards: WidgetCardId[];
+  calendars: CalendarSource[];
+  localShowOnStudent: boolean; // '내 일정'을 학생 화면에 보이기
+  holidays: boolean; // 대한민국 공휴일 표시
+  holidaysOnStudent: boolean;
+  localEvents: LocalEvent[];
+  todos: Todo[];
+  memos: Memo[];
+  periods: PeriodConfig;
+  timetable: string[][]; // [요일 0=월..4=금][교시] 과목
+  weatherRegion: string; // 지역 ID
+  school: { office: string; code: string; name: string } | null;
+  glass: boolean; // 칸 바탕 반투명
+  background: string; // 보드 배경 (그라데이션 ID)
+}
 
 export interface AppData {
   version: 1;
@@ -196,6 +261,7 @@ export interface AppData {
   lastScheduleCheckAt: number;
   settings: Settings;
   studentBase: StudentBase;
+  widget: WidgetData;
 }
 
 // ----- 런타임 (저장하지 않음) -----
@@ -257,9 +323,57 @@ export interface UpdateState {
   checkedAt?: number;
 }
 
+/** 달력에 보이는 일정 하나 (구글·내 일정·공휴일을 합친 것) */
+export interface CalEvent {
+  id: string;
+  calId: string; // 'local' | 'holiday' | CalendarSource.id
+  title: string;
+  start: number; // epoch ms (하루 종일이면 그날 0시)
+  end: number;
+  allDay: boolean;
+  color: string;
+}
+
+export interface CalendarStatus {
+  ok: boolean;
+  fetchedAt?: number;
+  count?: number;
+  error?: string;
+}
+
+export interface WeatherInfo {
+  fetchedAt: number;
+  temp: number;
+  code: number;
+  max: number;
+  min: number;
+  rainProb: number;
+  pm10?: number;
+  pm25?: number;
+}
+
+export interface MealInfo {
+  date: string; // YYYY-MM-DD
+  dishes: string[];
+  allergies: string[]; // 요리별 알레르기 번호 문자열
+  fetchedAt: number;
+  note?: string; // '급식 없음' 등
+}
+
+export interface WidgetRuntime {
+  googleEvents: CalEvent[]; // 구글 캘린더에서 받은 일정 (주소는 포함하지 않음)
+  calStatus: Record<string, CalendarStatus>;
+  weather: WeatherInfo | null;
+  weatherError?: string;
+  meal: MealInfo | null;
+  mealError?: string;
+  visible: boolean;
+}
+
 export interface Runtime {
   timer: TimerState;
   update: UpdateState;
+  widget: WidgetRuntime;
   seatingReveal: (RevealState & { classId: string; result: SeatingResult }) | null;
   pickerReveal: (RevealState & { names: string[]; poolNames: string[] }) | null;
   studentWindow: StudentWindowStatus;
@@ -326,8 +440,14 @@ export interface StudentBoardView {
   autoFit: boolean;
 }
 
+export interface StudentAgendaView {
+  title: string;
+  days: { date: string; label: string; isToday: boolean; holiday: boolean; items: { title: string; time: string | null; color: string }[] }[];
+}
+
 export interface StudentView {
   base: StudentBase;
+  agenda?: StudentAgendaView | null;
   board: StudentBoardView;
   seating: StudentSeatingView | null;
   picker: StudentPickerView | null;

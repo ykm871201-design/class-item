@@ -36,6 +36,7 @@ export class Controller {
     this.rt = {
       timer: idleTimer({ durationMs: data.settings.lastTimerSec * 1000, activity: data.settings.timerActivity, sound: data.settings.timerSound, volume: data.settings.timerVolume, mode: data.settings.timerDisplayMode, warnFrom: data.settings.timerWarnFrom }),
       update: { status: 'idle', current: extra.appVersion },
+      widget: { googleEvents: [], calStatus: {}, weather: null, meal: null, visible: false },
       seatingReveal: null,
       pickerReveal: null,
       notices: [],
@@ -55,12 +56,15 @@ export class Controller {
   }
 
   studentView(): StudentView {
-    return buildStudentView(this.data, this.rt);
+    return buildStudentView(this.data, this.rt, this.now());
   }
 
   fullState(): FullState {
+    // 구글 캘린더 주소(암호화 값 포함)는 화면으로 보내지 않는다
+    const w = this.data.widget;
+    const data = { ...this.data, widget: { ...w, calendars: w.calendars.map((c) => ({ ...c, urlEnc: c.urlEnc ? 'saved' : '' })) } };
     return {
-      data: this.data,
+      data,
       runtime: { ...this.rt, studentWindow: this.ports.studentWindowStatus(), displays: this.ports.displays(), now: this.now() },
       studentView: this.studentView(),
     };
@@ -324,7 +328,7 @@ export class Controller {
         return;
       case 'student/base': {
         const base = a.base as AppData['studentBase'];
-        if (!['blank', 'board', 'seating', 'picker'].includes(base)) return { ok: false };
+        if (!['blank', 'board', 'seating', 'picker', 'agenda'].includes(base)) return { ok: false };
         if (base === 'seating' && !this.rt.seatingReveal && !c.seating.confirmed) return { ok: false, error: '확정된 자리 배치가 없습니다.' };
         this.data.studentBase = base;
         if (base === 'seating' && a.confirmed) this.rt.seatingReveal = null;
@@ -592,6 +596,98 @@ export class Controller {
       case 'picker/clearHistory':
         c.picker.history = c.picker.history.filter((h) => h.date !== this.today);
         c.picker.pickedPool = [];
+        return;
+
+      // ----- 바탕화면 위젯 -----
+      case 'widget/update': {
+        const w = this.data.widget;
+        const p = a.patch ?? {};
+        for (const k of ['showOnStartup', 'localShowOnStudent', 'holidays', 'holidaysOnStudent', 'glass'] as const) if (typeof p[k] === 'boolean') w[k] = p[k];
+        if (typeof p.weatherRegion === 'string') w.weatherRegion = p.weatherRegion;
+        if (typeof p.background === 'string') w.background = p.background;
+        if (p.periods && typeof p.periods === 'object') {
+          const q = { ...w.periods, ...p.periods };
+          w.periods = {
+            firstStart: /^\d{1,2}:\d{2}$/.test(q.firstStart) ? q.firstStart : w.periods.firstStart,
+            length: clamp(Math.round(+q.length || 40), 10, 120),
+            breakLen: clamp(Math.round(+q.breakLen || 0), 0, 60),
+            count: clamp(Math.round(+q.count || 6), 1, 10),
+            lunchAfter: clamp(Math.round(+q.lunchAfter || 0), 0, 10),
+            lunchLen: clamp(Math.round(+q.lunchLen || 0), 0, 120),
+          };
+        }
+        return;
+      }
+      case 'widget/card': {
+        const w = this.data.widget;
+        w.hiddenCards = a.hidden ? [...new Set([...w.hiddenCards, a.id])] : w.hiddenCards.filter((x) => x !== a.id);
+        return;
+      }
+      case 'widget/addEvent': {
+        const title = String(a.title ?? '').trim();
+        if (!title) return { ok: false, error: '일정 내용을 입력해 주세요.' };
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(a.date)) return { ok: false, error: '날짜를 확인해 주세요.' };
+        const time = typeof a.time === 'string' && /^\d{2}:\d{2}$/.test(a.time) ? a.time : undefined;
+        this.data.widget.localEvents.push({ id: newId('e_'), title: title.slice(0, 100), date: a.date, time });
+        return;
+      }
+      case 'widget/deleteEvent':
+        this.data.widget.localEvents = this.data.widget.localEvents.filter((e) => e.id !== a.id);
+        return;
+      case 'widget/todoAdd': {
+        const text = String(a.text ?? '').trim();
+        if (!text) return { ok: false };
+        this.data.widget.todos.push({ id: newId('t_'), text: text.slice(0, 200), date: this.today, done: false });
+        return;
+      }
+      case 'widget/todoToggle': {
+        const t = this.data.widget.todos.find((x) => x.id === a.id);
+        if (t) {
+          t.done = !t.done;
+          t.doneDate = t.done ? this.today : undefined;
+        }
+        // 끝낸 지 7일 지난 할 일은 정리
+        const weekAgo = localDateKey(now - 7 * 86400_000);
+        this.data.widget.todos = this.data.widget.todos.filter((x) => !x.done || (x.doneDate ?? '') >= weekAgo);
+        return;
+      }
+      case 'widget/todoDelete':
+        this.data.widget.todos = this.data.widget.todos.filter((x) => x.id !== a.id);
+        return;
+      case 'widget/memoAdd':
+        this.data.widget.memos.push({ id: newId('m_'), title: '', text: '', color: a.color ?? '#fff3a8' });
+        return { ok: true, id: this.data.widget.memos[this.data.widget.memos.length - 1].id };
+      case 'widget/memoUpdate': {
+        const m = this.data.widget.memos.find((x) => x.id === a.id);
+        if (!m) return;
+        if (typeof a.patch?.text === 'string') m.text = a.patch.text.slice(0, 3000);
+        if (typeof a.patch?.title === 'string') m.title = a.patch.title.slice(0, 40);
+        if (typeof a.patch?.color === 'string' && /^#[0-9a-f]{6}$/i.test(a.patch.color)) m.color = a.patch.color;
+        return;
+      }
+      case 'widget/memoDelete':
+        this.data.widget.memos = this.data.widget.memos.filter((x) => x.id !== a.id);
+        return;
+      case 'widget/timetable': {
+        const d = Math.round(Number(a.day));
+        const p = Math.round(Number(a.period));
+        if (d < 0 || d > 4 || p < 0 || p > 9) return { ok: false };
+        this.data.widget.timetable[d][p] = String(a.value ?? '').slice(0, 20);
+        return;
+      }
+      case 'widget/calendarUpdate': {
+        const c = this.data.widget.calendars.find((x) => x.id === a.id);
+        if (!c) return { ok: false, error: '캘린더를 찾을 수 없습니다.' };
+        const q = a.patch ?? {};
+        if (typeof q.name === 'string' && q.name.trim()) c.name = q.name.trim().slice(0, 30);
+        if (typeof q.color === 'string' && /^#[0-9a-f]{6}$/i.test(q.color)) c.color = q.color;
+        if (typeof q.enabled === 'boolean') c.enabled = q.enabled;
+        if (typeof q.showOnStudent === 'boolean') c.showOnStudent = q.showOnStudent;
+        return;
+      }
+      case 'widget/calendarDelete':
+        this.data.widget.calendars = this.data.widget.calendars.filter((x) => x.id !== a.id);
+        this.rt.widget = { ...this.rt.widget, googleEvents: this.rt.widget.googleEvents.filter((e) => e.calId !== a.id) };
         return;
 
       // ----- 설정 -----

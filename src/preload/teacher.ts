@@ -10,6 +10,11 @@ contextBridge.exposeInMainWorld('api', {
     ipcRenderer.on('state', h);
     return () => ipcRenderer.removeListener('state', h);
   },
+  onNav: (cb: (tab: string) => void) => {
+    const h = (_e: unknown, t: string) => cb(t);
+    ipcRenderer.on('nav', h);
+    return () => ipcRenderer.removeListener('nav', h);
+  },
   onSound: (cb: (p: unknown) => void) => {
     const h = (_e: unknown, p: unknown) => cb(p);
     ipcRenderer.on('sound:play', h);

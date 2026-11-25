@@ -8,6 +8,7 @@ export interface Api {
   confirm(o: { message: string; detail?: string; ok?: string; cancel?: string }): Promise<boolean>;
   onState(cb: (s: FullState) => void): () => void;
   onSound(cb: (p: { runId: string; sound: string; volume: number }) => void): () => void;
+  onNav(cb: (tab: string) => void): () => void;
 }
 
 declare global {

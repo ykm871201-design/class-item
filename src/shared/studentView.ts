@@ -3,6 +3,7 @@
 import type { AppData, BoardStyle, ClassRoom, Runtime, SeatingResult, StudentBoardView, StudentSeatingView, StudentView } from './types';
 import { displayNames } from './roster';
 import { allSeats, columnGaps, disabledList, seatColumns, totalRows } from './seating';
+import { studentAgenda } from './widget';
 
 export function boardView(b: BoardStyle): StudentBoardView {
   return { text: b.text, fontSize: b.fontSize, color: b.color, bg: b.bg, align: b.align, bold: b.bold, autoFit: b.autoFit };
@@ -31,7 +32,7 @@ export function seatingView(cls: ClassRoom, result: SeatingResult, reveal: { rev
   };
 }
 
-export function buildStudentView(data: AppData, rt: Pick<Runtime, 'timer' | 'seatingReveal' | 'pickerReveal'>): StudentView {
+export function buildStudentView(data: AppData, rt: Pick<Runtime, 'timer' | 'seatingReveal' | 'pickerReveal'> & { widget?: Runtime['widget'] }, now = Date.now()): StudentView {
   const cls = data.classes.find((c) => c.id === data.currentClassId) ?? null;
   let seating: StudentSeatingView | null = null;
   if (cls) {
@@ -52,5 +53,7 @@ export function buildStudentView(data: AppData, rt: Pick<Runtime, 'timer' | 'sea
     t.shown && t.status !== 'idle'
       ? { status: t.status, durationMs: t.durationMs, endAt: t.endAt, remainingMs: t.remainingMs, activity: t.activity, mode: t.mode }
       : null;
-  return { base: data.studentBase, board: boardView(data.boardPublished), seating, picker, timer };
+  // 이번 주 일정: '학생 화면에 보이기'로 고른 캘린더만 (주소·개인 캘린더는 포함하지 않음)
+  const agenda = data.studentBase === 'agenda' ? studentAgenda(data, rt.widget?.googleEvents ?? [], now) : null;
+  return { base: data.studentBase, board: boardView(data.boardPublished), seating, picker, timer, agenda };
 }
