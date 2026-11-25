@@ -14,7 +14,8 @@
 ## 1. 빠른 사용 설명
 
 ### 설치
-1. `ClassroomTools-Setup-1.0.0.exe`를 실행합니다.
+1. 저장소 페이지 오른쪽 **Releases**에서 최신 버전의 `ClassroomTools-Setup-x.x.x.exe`를 내려받아 실행합니다.
+   - 설치 파일은 GitHub Actions가 Windows에서 자동으로 빌드합니다 (`.github/workflows/release.yml`).
    - 코드 서명이 없는 설치 파일이라 Windows SmartScreen 경고가 나올 수 있습니다. 이때는 **추가 정보 → 실행**을 누르세요.
 2. 바탕 화면이나 시작 메뉴의 **교실 도구**를 실행합니다.
 
@@ -173,6 +174,8 @@ Linux·macOS에서 실행할 때 (Wine 불필요):
 ```bash
 npm run dist:win:linux
 ```
+
+GitHub에서 자동 빌드하려면 `package.json`의 `version`을 올린 뒤 같은 버전의 태그를 올립니다 (예: `git tag v1.0.1` 후 `git push origin v1.0.1`). 몇 분 뒤 Releases에 설치 파일이 올라갑니다. Actions 탭에서 **Run workflow**로 직접 실행하면 실행 결과의 Artifacts에서 내려받을 수 있습니다.
 
 결과물은 `release/ClassroomTools-Setup-1.0.0.exe`입니다 (NSIS, x64, 설치 경로 선택 가능, 바탕 화면·시작 메뉴 바로 가기 생성).
 - 아이콘은 `scripts/make-icons.mjs`로 생성합니다 (`npm run icons`).
