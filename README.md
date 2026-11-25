@@ -175,7 +175,7 @@ Linux·macOS에서 실행할 때 (Wine 불필요):
 npm run dist:win:linux
 ```
 
-GitHub에서 자동 빌드하려면 `package.json`의 `version`을 올린 뒤 같은 버전의 태그를 올립니다 (예: `git tag v1.0.1` 후 `git push origin v1.0.1`). 몇 분 뒤 Releases에 설치 파일이 올라갑니다. Actions 탭에서 **Run workflow**로 직접 실행하면 실행 결과의 Artifacts에서 내려받을 수 있습니다.
+GitHub 자동 빌드: `main` 브랜치에 코드를 올리면(또는 Actions 탭 → **Run workflow**) GitHub이 Windows에서 테스트·빌드한 뒤 `package.json`의 `version`으로 Releases(예: `v1.0.0`)에 설치 파일을 올립니다. 새 버전을 내려면 `version`을 올린 뒤 커밋하세요.
 
 결과물은 `release/ClassroomTools-Setup-1.0.0.exe`입니다 (NSIS, x64, 설치 경로 선택 가능, 바탕 화면·시작 메뉴 바로 가기 생성).
 - 아이콘은 `scripts/make-icons.mjs`로 생성합니다 (`npm run icons`).
