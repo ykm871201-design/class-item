@@ -13,7 +13,8 @@
     "icons": "node scripts/make-icons.mjs",
     "dist:win": "node scripts/build.mjs --prod && electron-builder --win nsis --x64",
     "e2e": "node scripts/build.mjs && node tests-e2e/run.mjs",
-    "dist:win:linux": "node scripts/build.mjs --prod && node scripts/dist-win-linux.cjs"
+    "dist:win:linux": "node scripts/build.mjs --prod && node scripts/dist-win-linux.cjs",
+    "review-bundle": "node scripts/make-review-bundle.mjs"
   },
   "keywords": [],
   "author": "Classroom Tools",

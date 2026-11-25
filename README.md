@@ -90,6 +90,9 @@
 
 ---
 
+## 외부 검토
+다른 AI(GPT 등)나 개발자에게 비판적 검토를 맡길 때는 `docs/REVIEW_GUIDE.md`(안내서)와 `docs/GPT_REVIEW_PROMPT.md`(요청문)를 쓰고, `npm run review-bundle`로 만든 `review-bundle/` 파일을 첨부합니다.
+
 ## 2. 기술 선택
 
 **Electron + TypeScript + React**를 사용하고, esbuild로 번들링하며, electron-builder로 NSIS 설치 파일을 만듭니다.
