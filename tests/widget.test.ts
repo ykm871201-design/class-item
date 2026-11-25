@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { parseIcs, googleAddUrl, normalizeIcsUrl, zonedToEpoch } from '../src/shared/ical';
 import { koreanHolidays } from '../src/shared/holidays';
-import { buildPeriods, cleanDishes, mergedEvents, periodNow, studentAgenda, airGrade } from '../src/shared/widget';
+import { buildPeriods, cleanDishes, mergedEvents, periodNow, airGrade } from '../src/shared/widget';
 import { defaultData, defaultWidget, normalizeData } from '../src/shared/defaults';
 import { buildStudentView } from '../src/shared/studentView';
 import { idleTimer } from '../src/shared/timer';
@@ -134,11 +134,20 @@ describe('대한민국 공휴일', () => {
 });
 
 describe('교시 계산', () => {
-  const cfg = { firstStart: '09:00', length: 40, breakLen: 10, count: 6, lunchAfter: 4, lunchLen: 50 };
+  const cfg = { firstStart: '09:00', length: 40, breakLen: 10, count: 6, lunchAfter: 4, lunchLen: 50, playAfter: 0, playLen: 0 };
   it('시각표', () => {
     const s = buildPeriods(cfg);
     expect(s.map((x) => x.label)).toEqual(['1교시', '2교시', '3교시', '4교시', '점심시간', '5교시', '6교시']);
     expect(s[5].start).toBe(13 * 60); // 4교시 11:30~12:10, 점심 12:10~13:00, 5교시 13:00
+  });
+  it('2~3교시 사이 중간놀이 20분', () => {
+    const c2 = { ...cfg, playAfter: 2, playLen: 20 };
+    const s = buildPeriods(c2);
+    expect(s.map((x) => x.label)).toEqual(['1교시', '2교시', '중간놀이', '3교시', '4교시', '점심시간', '5교시', '6교시']);
+    // 1교시 9:00~9:40, 2교시 9:50~10:30, 중간놀이 10:30~10:50, 3교시 10:50~11:30
+    expect([s[2].start, s[2].end, s[3].start]).toEqual([10 * 60 + 30, 10 * 60 + 50, 10 * 60 + 50]);
+    const p = periodNow(c2, new Date(2026, 10, 25, 10, 40));
+    expect([p.state, p.title, p.next?.label, p.remainSec]).toEqual(['play', '중간놀이', '3교시', 600]);
   });
   it('지금 상태', () => {
     expect(periodNow(cfg, new Date(2026, 10, 25, 8, 30)).state).toBe('before');
@@ -164,19 +173,16 @@ describe('일정 합치기와 학생 화면', () => {
     const ev = mergedEvents(w, g, L(2026, 11, 23), L(2026, 11, 30));
     expect(ev.map((e) => e.title).sort()).toEqual(['개인 병원 예약', '내 메모 일정', '학교 행사']);
   });
-  it('학생 화면: 학생 화면에 보이기로 고른 캘린더만, 주소·개인 일정 없음', () => {
-    const d = { ...defaultData(), widget: w, studentBase: 'agenda' as const };
-    const v = buildStudentView(d, { timer: idleTimer(), seatingReveal: null, pickerReveal: null, widget: { googleEvents: g, calStatus: {}, weather: null, meal: null, visible: false } }, L(2026, 11, 25, 9));
+  it('학생용 위젯: 구글 캘린더·내 일정·메모·주소는 학생 화면으로 보내지 않음', () => {
+    const d = { ...defaultData(), widget: { ...w, studentNotice: '내일 준비물: 리코더', memos: [{ id: 'm', title: '', text: '교사 개인 메모', color: '#fff3a8' }] }, studentBase: 'widget' as const };
+    d.widget.timetable[2][0] = '국어';
+    const v = buildStudentView(d, { timer: idleTimer(), seatingReveal: null, pickerReveal: null, widget: { googleEvents: g, calStatus: {}, weather: null, meal: { date: '2026-11-25', dishes: ['귀리밥'], allergies: [''], fetchedAt: 0 }, visible: false } }, L(2026, 11, 25, 9));
     const json = JSON.stringify(v);
-    expect(json).toContain('학교 행사');
-    expect(json).not.toContain('개인 병원');
-    expect(json).not.toContain('내 메모 일정'); // 내 일정은 기본으로 학생 화면에 안 보임
-    expect(json).not.toMatch(/urlEnc|ical|https?:/);
-    expect(v.agenda!.days.find((x) => x.isToday)!.date).toBe('2026-11-25');
-  });
-  it('studentAgenda: 주말은 일정이 있을 때만', () => {
-    const a = studentAgenda({ ...defaultData(), widget: { ...w, holidaysOnStudent: false } }, g, L(2026, 11, 25));
-    expect(a.days.map((d) => d.label.slice(-3))).toEqual(['(월)', '(화)', '(수)', '(목)', '(금)']);
+    expect(v.widget!.main).toBe('clock');
+    expect(json).toContain('리코더');
+    expect(json).toContain('국어');
+    expect(json).toContain('귀리밥');
+    expect(json).not.toMatch(/학교 행사|개인 병원|내 메모 일정|교사 개인 메모|urlEnc|calendars|googleEvents/);
   });
 });
 
@@ -204,5 +210,26 @@ describe('급식·미세먼지·저장', () => {
     const ctl = new Controller(d, ports, { userDataPath: '', appVersion: 't' });
     expect(JSON.stringify(ctl.fullState())).not.toContain('SECRETSECRET');
     expect(ctl.data.widget.calendars[0].urlEnc).toBe('enc:SECRETSECRET'); // 원본은 그대로 저장
+  });
+});
+
+describe('학생용 위젯 흐름: 큰 칸에 칠판·타이머', () => {
+  it('위젯 중 칠판 표시 → 큰 칸에 칠판, 타이머 → 위젯 안에 타이머, 닫으면 다시 칠판, 시계로 되돌리기', () => {
+    const ports = { persist() {}, showStudent: () => true, hideStudent() {}, applyTopmost() {}, playSound() {}, notify() {}, broadcast() {}, studentWindowStatus: () => ({ visible: true, mode: 'display', fullscreen: true, displayAvailable: true, displayLabel: '', alwaysOnTop: true }), displays: () => [] } as unknown as Ports;
+    const ctl = new Controller(defaultData(), ports, { userDataPath: '', appVersion: 't' });
+    ctl.dispatch({ type: 'student/base', base: 'widget', main: 'clock' });
+    expect([ctl.studentView().base, ctl.studentView().widget!.main]).toEqual(['widget', 'clock']);
+    ctl.dispatch({ type: 'board/updateDraft', patch: { text: '조용히 책 읽기' } });
+    ctl.dispatch({ type: 'board/publish' });
+    expect([ctl.studentView().base, ctl.studentView().widget!.main, ctl.studentView().board.text]).toEqual(['widget', 'board', '조용히 책 읽기']);
+    ctl.dispatch({ type: 'timer/start', durationSec: 60, activity: '', sound: 'none', volume: 0, mode: 'split' });
+    expect(ctl.studentView().base).toBe('widget');
+    expect(ctl.studentView().timer?.mode).toBe('split');
+    ctl.dispatch({ type: 'student/base', base: 'widget' }); // 위젯 버튼을 다시 눌러도 타이머 유지
+    expect(ctl.studentView().timer?.status).toBe('running');
+    ctl.dispatch({ type: 'timer/close' });
+    expect([ctl.studentView().timer, ctl.studentView().widget!.main]).toEqual([null, 'board']);
+    ctl.dispatch({ type: 'student/widgetMain', main: 'clock' });
+    expect(ctl.studentView().widget!.main).toBe('clock');
   });
 });

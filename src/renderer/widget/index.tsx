@@ -58,8 +58,8 @@ function Board() {
             새 버전 · 업데이트
           </button>
         )}
-        <button className="wb-btn" title="학생 화면에 이번 주 일정 띄우기" onClick={() => act('student/base', { base: 'agenda' }, '학생 화면에 이번 주 일정을 띄웠습니다.')}>
-          📅 학생 화면에 일정
+        <button className="wb-btn" title="학생 화면에 학생용 위젯(큰 시계·달력·날씨·급식·시간표) 띄우기" onClick={() => act('student/base', { base: 'widget', main: 'clock' }, '학생 화면에 학생용 위젯을 띄웠습니다.')}>
+          📺 학생 위젯 띄우기
         </button>
         <button className="wb-btn" title="교사용 화면 열기" onClick={() => openTeacher()}>
           교사용 화면
@@ -610,7 +610,7 @@ function ToolsCard() {
     { ico: '🎯', label: '뽑기', run: () => openTeacher('picker') },
     { ico: '🪑', label: '자리', run: () => openTeacher('seating') },
     { ico: '📝', label: '칠판', run: () => openTeacher('board') },
-    { ico: '📅', label: '일정 띄우기', run: () => act('student/base', { base: 'agenda' }) },
+    { ico: '🕒', label: '학생 위젯', run: () => act('student/base', { base: 'widget', main: 'clock' }) },
     { ico: runtime.studentWindow.visible ? '🙈' : '📺', label: runtime.studentWindow.visible ? '학생 화면 숨기기' : '학생 화면 보이기', run: () => act(runtime.studentWindow.visible ? 'student/hide' : 'student/show') },
   ];
   return (

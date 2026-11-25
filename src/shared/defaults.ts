@@ -91,12 +91,13 @@ export function defaultWidget(): WidgetData {
     localEvents: [],
     todos: [],
     memos: [{ id: newId('m_'), title: '', text: '여기에 메모를 적어 보세요', color: MEMO_COLORS[0] }],
-    periods: { firstStart: '09:00', length: 40, breakLen: 10, count: 6, lunchAfter: 4, lunchLen: 50 },
+    periods: { firstStart: '09:00', length: 40, breakLen: 10, count: 6, lunchAfter: 4, lunchLen: 50, playAfter: 2, playLen: 20 },
     timetable: Array.from({ length: 5 }, () => Array.from({ length: 10 }, () => '')),
     weatherRegion: 'seoul',
     school: null,
     glass: true,
     background: 'sky',
+    studentNotice: '',
   };
 }
 
@@ -119,6 +120,7 @@ export function defaultData(): AppData {
     lastScheduleCheckAt: 0,
     settings: defaultSettings(),
     studentBase: 'blank',
+    studentWidgetMain: 'clock',
     widget: defaultWidget(),
   };
 }
@@ -292,12 +294,15 @@ function normWidget(v: unknown): WidgetData {
       count: clamp(Math.round(num(p.count, 6)), 1, 10),
       lunchAfter: clamp(Math.round(num(p.lunchAfter, 4)), 0, 10),
       lunchLen: clamp(Math.round(num(p.lunchLen, 50)), 0, 120),
+      playAfter: clamp(Math.round(num(p.playAfter, 2)), 0, 10),
+      playLen: clamp(Math.round(num(p.playLen, 20)), 0, 60),
     },
     timetable: Array.from({ length: 5 }, (_, i) => Array.from({ length: 10 }, (_, j) => (Array.isArray(tt[i]) && typeof tt[i][j] === 'string' ? (tt[i][j] as string).slice(0, 20) : ''))),
     weatherRegion: str(v.weatherRegion, 'seoul'),
     school: isObj(v.school) && typeof v.school.code === 'string' && typeof v.school.office === 'string' ? { office: v.school.office, code: v.school.code, name: str(v.school.name, '') } : null,
     glass: bool(v.glass, true),
     background: str(v.background, 'sky'),
+    studentNotice: str(v.studentNotice, '').slice(0, 1000),
   };
 }
 
@@ -338,7 +343,8 @@ export function normalizeData(raw: unknown): AppData {
       timerActivity: str(s.timerActivity, ''),
       lastTimerSec: clamp(num(s.lastTimerSec, 300), 1, 180 * 60),
     },
-    studentBase: ['blank', 'board', 'seating', 'agenda'].includes(raw.studentBase as string) ? (raw.studentBase as AppData['studentBase']) : 'blank',
+    studentBase: ['blank', 'board', 'seating', 'widget'].includes(raw.studentBase as string) ? (raw.studentBase as AppData['studentBase']) : 'blank',
+    studentWidgetMain: raw.studentWidgetMain === 'board' ? 'board' : 'clock',
     widget: normWidget(raw.widget),
   };
   if (!data.classes.some((c) => c.id === data.currentClassId)) data.currentClassId = data.classes[0].id;

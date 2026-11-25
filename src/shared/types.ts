@@ -181,7 +181,7 @@ export interface Settings {
   lastTimerSec: number;
 }
 
-export type StudentBase = 'blank' | 'board' | 'seating' | 'picker' | 'agenda';
+export type StudentBase = 'blank' | 'board' | 'seating' | 'picker' | 'widget';
 
 // ----- 바탕화면 위젯 보드 -----
 
@@ -227,6 +227,8 @@ export interface PeriodConfig {
   count: number; // 교시 수
   lunchAfter: number; // 몇 교시 뒤 점심 (0 = 없음)
   lunchLen: number; // 점심(분)
+  playAfter: number; // 몇 교시 뒤 중간놀이 (0 = 없음)
+  playLen: number; // 중간놀이(분)
 }
 
 export interface WidgetData {
@@ -246,6 +248,7 @@ export interface WidgetData {
   school: { office: string; code: string; name: string } | null;
   glass: boolean; // 칸 바탕 반투명
   background: string; // 보드 배경 (그라데이션 ID)
+  studentNotice: string; // 학생용 위젯 '알림장'
 }
 
 export interface AppData {
@@ -261,6 +264,8 @@ export interface AppData {
   lastScheduleCheckAt: number;
   settings: Settings;
   studentBase: StudentBase;
+  /** 학생용 위젯의 큰 칸: 평소 시계, 칠판을 띄우면 칠판 (타이머는 따로 겹쳐 표시) */
+  studentWidgetMain: 'clock' | 'board';
   widget: WidgetData;
 }
 
@@ -440,14 +445,23 @@ export interface StudentBoardView {
   autoFit: boolean;
 }
 
-export interface StudentAgendaView {
-  title: string;
-  days: { date: string; label: string; isToday: boolean; holiday: boolean; items: { title: string; time: string | null; color: string }[] }[];
+/** 학생용 위젯에 보낼 정보 (구글 캘린더·개인 일정·메모는 포함하지 않음) */
+export interface StudentWidgetView {
+  main: 'clock' | 'board';
+  periods: PeriodConfig;
+  timetable: string[][];
+  weather: WeatherInfo | null;
+  weatherRegion: string;
+  meal: MealInfo | null;
+  notice: string;
+  holidays: boolean;
+  background: string;
+  glass: boolean;
 }
 
 export interface StudentView {
   base: StudentBase;
-  agenda?: StudentAgendaView | null;
+  widget?: StudentWidgetView | null;
   board: StudentBoardView;
   seating: StudentSeatingView | null;
   picker: StudentPickerView | null;

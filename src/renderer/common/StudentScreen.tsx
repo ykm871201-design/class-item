@@ -1,7 +1,11 @@
 // 학생 화면 렌더링 (학생 창과 교사용 미리보기가 같은 코드를 사용)
 // 입력은 StudentView 뿐이며, 고정 자리 등 교사용 정보는 애초에 전달되지 않는다.
 import { useEffect, useMemo, useState } from 'react';
-import type { StudentAgendaView, StudentBoardView, StudentPickerView, StudentSeatingView, StudentTimerView, StudentView } from '../../shared/types';
+import type { StudentBoardView, StudentPickerView, StudentSeatingView, StudentTimerView, StudentView, StudentWidgetView } from '../../shared/types';
+import { BOARD_BACKGROUNDS } from '../../shared/defaults';
+import { koreanHolidays } from '../../shared/holidays';
+import { REGIONS, airGrade, buildPeriods, periodNow, weatherText } from '../../shared/widget';
+import { WEEKDAY_KO, localDateKey, pad2 } from '../../shared/util';
 import { formatClock } from '../../shared/util';
 import { fitFontPx, widestAt100 } from './fit';
 import { useNow, useSize, useFontsReady } from './hooks';
@@ -15,12 +19,13 @@ export function StudentScreen({ view }: { view: StudentView }) {
   const fontsReady = useFontsReady();
   const t = view.timer;
   let content: React.ReactNode;
-  if (t && t.mode === 'full') content = <TimerPanel timer={t} variant="full" />;
+  // 학생용 위젯: 타이머·칠판은 위젯의 큰 시계 자리에 뜬다
+  if (view.base === 'widget' && view.widget) content = <StudentWidget view={view} w={view.widget} />;
+  else if (t && t.mode === 'full') content = <TimerPanel timer={t} variant="full" />;
   else if (t && t.mode === 'split') content = <SplitView board={view.board} timer={t} size={size} />;
   else if (view.base === 'board') content = <BoardArea board={view.board} w={size.w} h={size.h} refH={size.h} />;
   else if (view.base === 'seating' && view.seating) content = <SeatingBoard s={view.seating} />;
   else if (view.base === 'picker' && view.picker) content = <PickerBoard p={view.picker} />;
-  else if (view.base === 'agenda' && view.agenda) content = <AgendaBoard a={view.agenda} />;
   else content = <div className="st-blank" />;
   return (
     <div className="st-root" ref={ref} data-fonts={fontsReady ? '1' : '0'} data-base={view.base} data-timer={t ? t.mode : 'none'}>
@@ -221,29 +226,217 @@ export function ScaledStudentScreen({ view, refW = 1920, refH = 1080 }: { view: 
   );
 }
 
-// ---------------- 이번 주 일정 ----------------
-function AgendaBoard({ a }: { a: StudentAgendaView }) {
-  const total = a.days.reduce((n, d) => n + Math.max(1, d.items.length), 0);
+// ---------------- 학생용 위젯 ----------------
+// 교사용 위젯과 비슷한 배치: 왼쪽 큰 칸(평소 시계, 타이머·칠판을 띄우면 그것), 오른쪽에 달력·날씨·급식·시간표.
+// 구글 캘린더·개인 일정·메모는 받지도 보여 주지도 않는다 (달력은 공휴일만).
+function StudentWidget({ view, w }: { view: StudentView; w: StudentWidgetView }) {
+  const now = useNow(1000);
+  const bg = BOARD_BACKGROUNDS.find((b) => b.id === w.background) ?? BOARD_BACKGROUNDS[0];
+  const t = view.timer;
+  const mainKind = t ? (t.mode === 'split' ? 'split' : 'timer') : w.main === 'board' ? 'board' : 'clock';
   return (
-    <div className="st-agenda" data-testid="student-agenda">
-      <div className="st-agenda-title">{a.title}</div>
-      <div className="st-agenda-days" style={{ fontSize: `min(4.2cqh, ${Math.max(2.2, 34 / Math.max(8, total + a.days.length * 0.6))}cqh)` }}>
-        {a.days.map((d) => (
-          <div key={d.date} className={`st-agenda-day${d.isToday ? ' today' : ''}`}>
-            <div className={`st-agenda-date${d.holiday ? ' holiday' : ''}`}>{d.label}</div>
-            <div className="st-agenda-items">
-              {d.items.length === 0 && <div className="st-agenda-empty">—</div>}
-              {d.items.map((it, i) => (
-                <div key={i} className="st-agenda-item">
-                  <span className="st-agenda-dot" style={{ background: it.color }} />
-                  {it.time && <span className="st-agenda-time">{it.time}</span>}
-                  <span>{it.title}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        ))}
+    <div className={`sw${w.glass ? ' glass' : ''}`} style={{ background: bg.css }} data-testid="student-widget" data-main={mainKind}>
+      <div className="sw-left">
+        <section className="sw-card sw-main">
+          <MainArea kind={mainKind} view={view} w={w} now={now} />
+        </section>
+        <div className="sw-bottom">
+          <section className="sw-card">
+            <div className="sw-head">오늘 시간표</div>
+            <TodayTimetable w={w} now={now} />
+          </section>
+          <section className="sw-card sw-notice">
+            <div className="sw-head">알림장</div>
+            <div className="sw-notice-text" data-testid="sw-notice">{w.notice || '오늘도 즐거운 하루!'}</div>
+          </section>
+        </div>
+      </div>
+      <div className="sw-right">
+        <section className="sw-card">
+          <MiniCalendar now={now} holidays={w.holidays} />
+        </section>
+        <section className="sw-card">
+          <StudentWeather w={w} />
+        </section>
+        <section className="sw-card">
+          <div className="sw-head">오늘 급식</div>
+          <div className="sw-meal" data-testid="sw-meal">{w.meal?.dishes.length ? w.meal.dishes.join(' · ') : w.meal?.note ?? '—'}</div>
+        </section>
+        <section className="sw-card sw-week">
+          <div className="sw-head">이번 주 시간표</div>
+          <WeekTimetable w={w} now={now} />
+        </section>
       </div>
     </div>
+  );
+}
+
+function MainArea({ kind, view, w, now }: { kind: 'clock' | 'board' | 'timer' | 'split'; view: StudentView; w: StudentWidgetView; now: number }) {
+  const [ref, size] = useSize<HTMLDivElement>();
+  return (
+    <div className="sw-main-inner" ref={ref} data-testid="sw-main">
+      {size.w > 0 &&
+        (kind === 'timer' ? (
+          <TimerPanel timer={view.timer!} variant="full" />
+        ) : kind === 'split' ? (
+          <SplitView board={view.board} timer={view.timer!} size={size} />
+        ) : kind === 'board' ? (
+          <BoardArea board={view.board} w={size.w} h={size.h} refH={size.h} />
+        ) : (
+          <BigClock w={w} now={now} />
+        ))}
+    </div>
+  );
+}
+
+function BigClock({ w, now }: { w: StudentWidgetView; now: number }) {
+  const d = new Date(now);
+  const p = periodNow(w.periods, d);
+  const dow = d.getDay();
+  const subj = (no: number) => (dow >= 1 && dow <= 5 ? w.timetable[dow - 1]?.[no - 1] ?? '' : '');
+  const showBar = p.state === 'class' || p.state === 'break' || p.state === 'lunch' || p.state === 'play' || p.state === 'before';
+  const min = Math.ceil(p.remainSec / 60);
+  return (
+    <div className="sw-clock" data-testid="sw-clock">
+      <div className="sw-clock-date">
+        {d.getMonth() + 1}월 {d.getDate()}일 {WEEKDAY_KO[dow]}요일
+      </div>
+      <div className="sw-clock-time">
+        {pad2(d.getHours())}:{pad2(d.getMinutes())}
+      </div>
+      <div className={`sw-clock-period ${p.state}`}>
+        {p.title}
+        {p.current?.kind === 'class' && subj(p.current.no) ? ` · ${subj(p.current.no)}` : ''}
+      </div>
+      {showBar && (
+        <>
+          <div className="sw-clock-bar">
+            <div style={{ width: `${Math.round(p.progress * 100)}%` }} />
+          </div>
+          <div className="sw-clock-sub">
+            <span>{p.next ? `다음: ${p.next.label}${subj(p.next.no) ? ` ${subj(p.next.no)}` : ''}` : p.sub}</span>
+            <span>{min}분 남음</span>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function TodayTimetable({ w, now }: { w: StudentWidgetView; now: number }) {
+  const d = new Date(now);
+  const dow = d.getDay();
+  const p = periodNow(w.periods, d);
+  const slots = buildPeriods(w.periods).filter((x) => x.kind === 'class');
+  if (dow === 0 || dow === 6) return <div className="sw-muted">주말입니다</div>;
+  return (
+    <div className="sw-today">
+      {slots.map((s) => (
+        <div key={s.no} className={`sw-today-item${p.current?.kind === 'class' && p.current.no === s.no ? ' cur' : ''}`}>
+          <span className="no">{s.no}</span>
+          <span className="subj">{w.timetable[dow - 1]?.[s.no - 1] || '—'}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function WeekTimetable({ w, now }: { w: StudentWidgetView; now: number }) {
+  const d = new Date(now);
+  const today = d.getDay() - 1;
+  const p = periodNow(w.periods, d);
+  const count = w.periods.count;
+  return (
+    <table className="sw-tt">
+      <thead>
+        <tr>
+          <th />
+          {['월', '화', '수', '목', '금'].map((x, i) => (
+            <th key={x} className={i === today ? 'today' : ''}>
+              {x}
+            </th>
+          ))}
+        </tr>
+      </thead>
+      <tbody>
+        {Array.from({ length: count }, (_, no) => (
+          <tr key={no}>
+            <th>{no + 1}</th>
+            {[0, 1, 2, 3, 4].map((day) => (
+              <td key={day} className={`${w.timetable[day]?.[no] ? 'filled' : ''}${day === today && p.current?.kind === 'class' && p.current.no === no + 1 ? ' cur' : ''}`}>
+                {w.timetable[day]?.[no] ?? ''}
+              </td>
+            ))}
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+function MiniCalendar({ now, holidays }: { now: number; holidays: boolean }) {
+  const d = new Date(now);
+  const y = d.getFullYear();
+  const m = d.getMonth();
+  const first = new Date(y, m, 1);
+  const start = new Date(y, m, 1 - first.getDay());
+  const hol = holidays ? koreanHolidays(y) : new Map<string, string>();
+  const today = localDateKey(d);
+  const days = Array.from({ length: 42 }, (_, i) => new Date(start.getFullYear(), start.getMonth(), start.getDate() + i));
+  const rows = days[35].getMonth() !== m ? 5 : 6;
+  const holidayText = [...hol].filter(([k]) => k.startsWith(`${y}-${pad2(m + 1)}`)).map(([k, n]) => `${Number(k.slice(8))}일 ${n}`);
+  return (
+    <div className="sw-cal" data-testid="sw-calendar">
+      <div className="sw-head">
+        {y}년 {m + 1}월
+      </div>
+      <div className="sw-cal-grid">
+        {WEEKDAY_KO.map((x, i) => (
+          <div key={x} className={`dow${i === 0 ? ' sun' : i === 6 ? ' sat' : ''}`}>
+            {x}
+          </div>
+        ))}
+        {days.slice(0, rows * 7).map((x) => {
+          const k = localDateKey(x);
+          return (
+            <div key={k} className={`day${x.getMonth() !== m ? ' out' : ''}${x.getDay() === 0 || hol.has(k) ? ' sun' : x.getDay() === 6 ? ' sat' : ''}${k === today ? ' today' : ''}`} title={hol.get(k) ?? ''}>
+              {x.getDate()}
+            </div>
+          );
+        })}
+      </div>
+      {holidayText.length > 0 && <div className="sw-cal-hol">{holidayText.join(' · ')}</div>}
+    </div>
+  );
+}
+
+function StudentWeather({ w }: { w: StudentWidgetView }) {
+  const wx = w.weather;
+  const region = REGIONS.find((r) => r.id === w.weatherRegion) ?? REGIONS[0];
+  if (!wx)
+    return (
+      <>
+        <div className="sw-head">날씨 · {region.name}</div>
+        <div className="sw-muted">—</div>
+      </>
+    );
+  const t = weatherText(wx.code);
+  const air = airGrade(wx.pm10, wx.pm25);
+  return (
+    <>
+      <div className="sw-head">날씨 · {region.name}</div>
+      <div className="sw-wx">
+        <span className="ico">{t.icon}</span>
+        <span className="temp">{Math.round(wx.temp)}°</span>
+        <span className="txt">
+          {t.text}
+          <br />
+          <small>
+            {Math.round(wx.min)}° / {Math.round(wx.max)}° · 비 {wx.rainProb}%
+          </small>
+        </span>
+      </div>
+      {air.text && <div className={`sw-air lv${air.level}`}>{air.text}</div>}
+    </>
   );
 }

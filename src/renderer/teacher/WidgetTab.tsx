@@ -59,6 +59,8 @@ export function WidgetTab() {
         <p className="small muted" style={{ marginBottom: 0 }}>위젯 위쪽 띠를 끌어 옮기고, 가장자리를 끌어 크기를 바꿉니다. 위치와 크기는 기억합니다.</p>
       </div>
 
+      <StudentWidgetSettings />
+
       <CalendarSettings />
 
       <div className="grid2">
@@ -135,7 +137,6 @@ function CalendarSettings() {
           <tr>
             <th>캘린더</th>
             <th style={{ width: 70 }}>보기</th>
-            <th style={{ width: 110 }}>학생 화면</th>
             <th>상태</th>
             <th style={{ width: 150 }} />
           </tr>
@@ -159,12 +160,6 @@ function CalendarSettings() {
                 </td>
                 <td>
                   <input type="checkbox" checked={c.enabled} onChange={(e) => act('widget/calendarUpdate', { id: c.id, patch: { enabled: e.target.checked } })} />
-                </td>
-                <td>
-                  <label className="inline small">
-                    <input type="checkbox" checked={c.showOnStudent} onChange={(e) => act('widget/calendarUpdate', { id: c.id, patch: { showOnStudent: e.target.checked } })} />
-                    보이기
-                  </label>
                 </td>
                 <td className="small">
                   {st ? (st.ok ? <span style={{ color: 'var(--ok)' }}>일정 {st.count}개 · {formatDateTimeKo(st.fetchedAt!)}</span> : <span style={{ color: 'var(--danger)' }}>{st.error}</span>) : <span className="muted">받는 중…</span>}
@@ -190,12 +185,6 @@ function CalendarSettings() {
               <span style={{ display: 'inline-block', width: 12, height: 12, background: '#2b8a3e', borderRadius: 3, marginRight: 6 }} />내 일정 (이 PC)
             </td>
             <td>항상</td>
-            <td>
-              <label className="inline small">
-                <input type="checkbox" checked={w.localShowOnStudent} onChange={(e) => act('widget/update', { patch: { localShowOnStudent: e.target.checked } })} />
-                보이기
-              </label>
-            </td>
             <td className="small muted">위젯 달력에서 날짜를 두 번 눌러 추가 · {w.localEvents.length}개</td>
             <td />
           </tr>
@@ -205,12 +194,6 @@ function CalendarSettings() {
             </td>
             <td>
               <input type="checkbox" checked={w.holidays} onChange={(e) => act('widget/update', { patch: { holidays: e.target.checked } })} />
-            </td>
-            <td>
-              <label className="inline small">
-                <input type="checkbox" checked={w.holidaysOnStudent} onChange={(e) => act('widget/update', { patch: { holidaysOnStudent: e.target.checked } })} />
-                보이기
-              </label>
             </td>
             <td className="small muted">대체공휴일 포함 (2025~2030년)</td>
             <td />
@@ -241,10 +224,7 @@ function CalendarSettings() {
         <button className="btn" onClick={() => api().app({ type: 'calendarRefresh' })}>
           지금 새로 받기
         </button>
-        <button className="btn primary" onClick={() => act('student/base', { base: 'agenda' }, '학생 화면에 이번 주 일정을 띄웠습니다.')} data-testid="agenda-to-student">
-          학생 화면에 이번 주 일정 띄우기
-        </button>
-        <span className="small muted">‘학생 화면’에 체크한 캘린더만 학생에게 보입니다. 개인 일정은 체크하지 마세요.</span>
+        <span className="small muted">구글 캘린더와 내 일정은 교사용 위젯에만 보이고, 학생용 위젯에는 나오지 않습니다.</span>
       </div>
     </div>
   );
@@ -278,9 +258,14 @@ function PeriodSettings() {
         {num('점심: ', 'lunchAfter', 0, 10, '교시 뒤')}
         {num('점심 길이', 'lunchLen', 0, 120)}
       </div>
+      <div className="row">
+        {num('중간놀이: ', 'playAfter', 0, 10, '교시 뒤')}
+        {num('중간놀이 길이', 'playLen', 0, 60)}
+        <span className="small muted">0교시 뒤 = 중간놀이 없음</span>
+      </div>
       <div className="small" style={{ marginTop: 8, display: 'flex', flexWrap: 'wrap', gap: 6 }}>
         {slots.map((s, i) => (
-          <span key={i} className={`pill${s.kind === 'lunch' ? ' g-f' : ''}`}>
+          <span key={i} className={`pill${s.kind === 'lunch' ? ' g-f' : s.kind === 'play' ? ' g-m' : ''}`}>
             {s.label} {fromMin(s.start)}~{fromMin(s.end)}
           </span>
         ))}
@@ -355,6 +340,37 @@ function SchoolSettings() {
           </tbody>
         </table>
       )}
+    </div>
+  );
+}
+
+function StudentWidgetSettings() {
+  const { data, studentView } = useAppState();
+  const w = data.widget;
+  const [notice, setNotice] = useState(w.studentNotice);
+  const on = studentView.base === 'widget';
+  return (
+    <div className="card">
+      <h2>
+        학생용 위젯 <span className="hint">학생 화면(TV)에 띄우는 위젯</span>
+      </h2>
+      <p className="small" style={{ marginTop: 0 }}>
+        왼쪽 큰 칸에 평소에는 <b>큰 시계와 지금 교시</b>가 보이고, 타이머나 칠판을 띄우면 그 자리에 <b>타이머 / 칠판 / 칠판+타이머</b>가 대신 뜹니다. 오른쪽에는 달력(공휴일만, 구글 캘린더는 보이지 않음)·날씨·급식·이번 주 시간표, 아래에는 오늘 시간표와 알림장이 보입니다.
+      </p>
+      <div className="row">
+        <button className="btn primary big" onClick={() => act('student/base', { base: 'widget', main: 'clock' }, '학생 화면에 학생용 위젯을 띄웠습니다.')} data-testid="student-widget-show">
+          {on ? '학생 위젯 다시 띄우기 (시계)' : '학생 화면에 학생 위젯 띄우기'}
+        </button>
+        {on && (
+          <button className="btn" onClick={() => act('student/widgetMain', { main: data.studentWidgetMain === 'board' ? 'clock' : 'board' })}>
+            큰 칸을 {data.studentWidgetMain === 'board' ? '시계로' : '칠판으로'} 바꾸기
+          </button>
+        )}
+      </div>
+      <div className="col" style={{ marginTop: 10 }}>
+        <span className="field-label">알림장 (학생 위젯 아래쪽에 보임)</span>
+        <textarea rows={3} value={notice} maxLength={1000} placeholder={'예: 내일 준비물 - 리코더, 색연필\n수요일 현장체험학습 동의서 제출'} onChange={(e) => setNotice(e.target.value)} onBlur={() => notice !== w.studentNotice && act('widget/update', { patch: { studentNotice: notice } }, '알림장을 저장했습니다.')} data-testid="student-notice" />
+      </div>
     </div>
   );
 }

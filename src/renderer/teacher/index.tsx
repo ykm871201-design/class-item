@@ -162,7 +162,7 @@ function SidePanel({ setTab }: { setTab: (t: Tab) => void }) {
     ? v.timer.mode === 'split'
       ? '칠판 + 타이머 함께 보기'
       : '전체 화면 타이머'
-    : { blank: '빈 화면', board: '칠판', seating: '자리 배치', picker: '발표자 뽑기', agenda: '이번 주 일정' }[v.base];
+    : { blank: '빈 화면', board: '칠판', seating: '자리 배치', picker: '발표자 뽑기', widget: data.studentWidgetMain === 'board' ? '학생용 위젯 (큰 칸에 칠판)' : '학생용 위젯 (큰 칸에 시계)' }[v.base];
   const sw = runtime.studentWindow;
   return (
     <aside className="t-side">
@@ -190,7 +190,23 @@ function SidePanel({ setTab }: { setTab: (t: Tab) => void }) {
         <button className="btn" onClick={() => act('student/base', { base: 'blank' })}>
           빈 화면
         </button>
+        <button className="btn primary" onClick={() => act('student/base', { base: 'widget', main: 'clock' })} data-testid="side-student-widget">
+          학생 위젯
+        </button>
       </div>
+      {v.base === 'widget' && (
+        <div className="row">
+          <span className="small muted">큰 칸:</span>
+          <div className="seg">
+            <button className={data.studentWidgetMain === 'clock' ? 'on' : ''} onClick={() => act('student/widgetMain', { main: 'clock' })} data-testid="sw-main-clock">
+              시계
+            </button>
+            <button className={data.studentWidgetMain === 'board' ? 'on' : ''} onClick={() => act('student/widgetMain', { main: 'board' })}>
+              칠판
+            </button>
+          </div>
+        </div>
+      )}
       {v.timer && (
         <button className="btn big danger" onClick={() => act('timer/close')}>
           타이머 닫기 (이전 화면으로)

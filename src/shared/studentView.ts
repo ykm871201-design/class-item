@@ -3,7 +3,6 @@
 import type { AppData, BoardStyle, ClassRoom, Runtime, SeatingResult, StudentBoardView, StudentSeatingView, StudentView } from './types';
 import { displayNames } from './roster';
 import { allSeats, columnGaps, disabledList, seatColumns, totalRows } from './seating';
-import { studentAgenda } from './widget';
 
 export function boardView(b: BoardStyle): StudentBoardView {
   return { text: b.text, fontSize: b.fontSize, color: b.color, bg: b.bg, align: b.align, bold: b.bold, autoFit: b.autoFit };
@@ -53,7 +52,23 @@ export function buildStudentView(data: AppData, rt: Pick<Runtime, 'timer' | 'sea
     t.shown && t.status !== 'idle'
       ? { status: t.status, durationMs: t.durationMs, endAt: t.endAt, remainingMs: t.remainingMs, activity: t.activity, mode: t.mode }
       : null;
-  // 이번 주 일정: '학생 화면에 보이기'로 고른 캘린더만 (주소·개인 캘린더는 포함하지 않음)
-  const agenda = data.studentBase === 'agenda' ? studentAgenda(data, rt.widget?.googleEvents ?? [], now) : null;
-  return { base: data.studentBase, board: boardView(data.boardPublished), seating, picker, timer, agenda };
+  // 학생용 위젯: 시계·교시·날씨·급식·시간표·알림장만 (구글 캘린더·개인 일정·메모는 보내지 않음)
+  void now;
+  const w = data.widget;
+  const widget =
+    data.studentBase === 'widget'
+      ? {
+          main: data.studentWidgetMain,
+          periods: { ...w.periods },
+          timetable: w.timetable.map((d) => d.slice(0, w.periods.count)),
+          weather: rt.widget?.weather ?? null,
+          weatherRegion: w.weatherRegion,
+          meal: rt.widget?.meal ?? null,
+          notice: w.studentNotice,
+          holidays: w.holidays,
+          background: w.background,
+          glass: w.glass,
+        }
+      : null;
+  return { base: data.studentBase, board: boardView(data.boardPublished), seating, picker, timer, widget };
 }

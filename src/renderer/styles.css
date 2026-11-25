@@ -74,18 +74,58 @@ body.student.hide-cursor, body.student.hide-cursor * { cursor: none; }
 .st-pick.shuffling { color: #9aa3ae; }
 .st-pick.reveal { animation: st-pop 0.5s ease-out both; border-color: #1f6feb; }
 
-.st-agenda { width: 100%; height: 100%; display: flex; flex-direction: column; background: #fbfaf6; padding: 3.5cqh 4cqw; }
-.st-agenda-title { font-size: 6.5cqh; font-weight: 800; color: #1d2430; margin-bottom: 2cqh; }
-.st-agenda-days { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 1.2cqh; overflow: hidden; }
-.st-agenda-day { display: grid; grid-template-columns: 22cqw 1fr; gap: 2cqw; align-items: start; background: #fff; border: 0.3cqh solid #dde2e8; border-radius: 1.4cqh; padding: 1.2cqh 2cqw; }
-.st-agenda-day.today { border-color: #1f6feb; box-shadow: 0 0 0 0.3cqh #1f6feb; }
-.st-agenda-date { font-weight: 800; color: #1d2430; }
-.st-agenda-date.holiday { color: #e03131; }
-.st-agenda-items { display: flex; flex-direction: column; gap: 0.6cqh; font-weight: 700; }
-.st-agenda-item { display: flex; align-items: center; gap: 0.8cqw; }
-.st-agenda-dot { width: 0.7em; height: 0.7em; border-radius: 50%; flex: none; }
-.st-agenda-time { color: #5b6573; font-variant-numeric: tabular-nums; }
-.st-agenda-empty { color: #adb5bd; }
+/* 학생용 위젯 (cq 단위 = 학생 화면 크기 기준) */
+.sw { width: 100%; height: 100%; display: grid; grid-template-columns: minmax(0, 2.5fr) minmax(0, 1fr); gap: 1.6cqh; padding: 1.8cqh 1.4cqw; }
+.sw-left { display: flex; flex-direction: column; gap: 1.6cqh; min-height: 0; }
+.sw-right { display: flex; flex-direction: column; gap: 1.6cqh; min-height: 0; }
+.sw-card { background: #fff; border-radius: 1.8cqh; box-shadow: 0 0.4cqh 1.6cqh rgba(0,0,0,0.14); padding: 1.4cqh 1.2cqw; min-height: 0; overflow: hidden; }
+.sw.glass .sw-card { background: rgba(255,255,255,0.88); backdrop-filter: blur(12px); }
+.sw-main { flex: 1; padding: 0; position: relative; }
+.sw-main-inner { position: absolute; inset: 0; container-type: size; overflow: hidden; border-radius: 1.8cqh; }
+.sw-main-inner .st-timer { border-radius: 0; }
+.sw-bottom { flex: 0 0 24%; display: grid; grid-template-columns: 1.3fr 1fr; gap: 1.6cqh; min-height: 0; }
+.sw-head { font-size: 2.4cqh; font-weight: 800; color: #495057; margin-bottom: 0.8cqh; }
+.sw-muted { color: #adb5bd; font-size: 2.4cqh; }
+.sw-clock { width: 100%; height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1.5cqh; padding: 4cqh 6cqw; }
+.sw-clock-date { font-size: 7cqh; font-weight: 700; color: #495057; }
+.sw-clock-time { font-size: min(36cqh, 26cqw); font-weight: 800; font-variant-numeric: tabular-nums; line-height: 1; color: #1d2430; }
+.sw-clock-period { font-size: 9cqh; font-weight: 800; color: #3b5bdb; }
+.sw-clock-period.break, .sw-clock-period.lunch, .sw-clock-period.play { color: #2b8a3e; }
+.sw-clock-period.after, .sw-clock-period.weekend, .sw-clock-period.before { color: #868e96; }
+.sw-clock-bar { width: 80%; height: 2.4cqh; background: #e9ecef; border-radius: 999px; overflow: hidden; }
+.sw-clock-bar > div { height: 100%; background: #3b5bdb; }
+.sw-clock-sub { width: 80%; display: flex; justify-content: space-between; font-size: 5cqh; font-weight: 700; color: #495057; }
+.sw-today { display: flex; gap: 0.8cqw; height: calc(100% - 4cqh); align-items: stretch; }
+.sw-today-item { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; background: #f1f3f5; border-radius: 1.2cqh; min-width: 0; }
+.sw-today-item .no { font-size: 2cqh; color: #868e96; font-weight: 700; }
+.sw-today-item .subj { font-size: 3.2cqh; font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 95%; }
+.sw-today-item.cur { background: #dbe4ff; outline: 0.4cqh solid #3b5bdb; }
+.sw-notice-text { font-size: 3cqh; font-weight: 700; white-space: pre-wrap; line-height: 1.35; overflow: hidden; }
+.sw-cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 0.3cqh; text-align: center; }
+.sw-cal-grid .dow { font-size: 1.7cqh; font-weight: 700; color: #868e96; }
+.sw-cal-grid .day { font-size: 2.1cqh; font-weight: 700; padding: 0.3cqh 0; border-radius: 999px; }
+.sw-cal-grid .sun { color: #e03131; }
+.sw-cal-grid .sat { color: #1c7ed6; }
+.sw-cal-grid .out { opacity: 0.3; }
+.sw-cal-grid .today { background: #3b5bdb; color: #fff; }
+.sw-cal-hol { margin-top: 0.6cqh; font-size: 1.7cqh; color: #e03131; font-weight: 700; }
+.sw-wx { display: flex; align-items: center; gap: 1cqw; }
+.sw-wx .ico { font-size: 5.5cqh; }
+.sw-wx .temp { font-size: 5.5cqh; font-weight: 800; }
+.sw-wx .txt { font-size: 2.3cqh; font-weight: 700; color: #495057; }
+.sw-air { margin-top: 0.8cqh; border-radius: 1cqh; padding: 0.5cqh 0.8cqw; font-size: 2cqh; font-weight: 800; text-align: center; }
+.sw-air.lv0 { background: #d3f9d8; color: #2b8a3e; }
+.sw-air.lv1 { background: #e7f5ff; color: #1864ab; }
+.sw-air.lv2 { background: #fff3bf; color: #946800; }
+.sw-air.lv3 { background: #ffe3e3; color: #c92a2a; }
+.sw-meal { font-size: 2.5cqh; font-weight: 700; line-height: 1.4; }
+.sw-week { flex: 1; }
+.sw-tt { width: 100%; border-collapse: separate; border-spacing: 0.3cqh; table-layout: fixed; }
+.sw-tt th { font-size: 1.7cqh; color: #868e96; }
+.sw-tt th.today { color: #3b5bdb; }
+.sw-tt td { background: #f1f3f5; border-radius: 0.6cqh; text-align: center; font-size: 1.9cqh; font-weight: 700; height: 3.2cqh; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sw-tt td.filled { background: #e7f5ff; }
+.sw-tt td.cur { outline: 0.3cqh solid #3b5bdb; background: #dbe4ff; }
 
 @keyframes st-flip { from { transform: rotateX(80deg); opacity: 0.2; } to { transform: none; opacity: 1; } }
 @keyframes st-pop { 0% { transform: scale(0.85); opacity: 0.3; } 70% { transform: scale(1.04); opacity: 1; } 100% { transform: scale(1); } }
@@ -357,7 +397,7 @@ body.widget { overflow: hidden; font-size: 14px; background: transparent; }
 .clk-time { font-size: 46px; font-weight: 800; font-variant-numeric: tabular-nums; line-height: 1.05; }
 .clk-period { text-align: right; }
 .clk-now { font-size: 24px; font-weight: 800; color: #4c6ef5; }
-.clk-now.break, .clk-now.lunch { color: #2f9e44; }
+.clk-now.break, .clk-now.lunch, .clk-now.play { color: #2f9e44; }
 .clk-now.after, .clk-now.weekend, .clk-now.before { color: #868e96; }
 .clk-subj { font-size: 16px; font-weight: 700; }
 .clk-bar { height: 8px; background: #e9ecef; border-radius: 999px; overflow: hidden; margin: 8px 0 4px; }

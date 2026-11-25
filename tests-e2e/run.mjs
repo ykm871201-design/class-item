@@ -589,9 +589,6 @@ await check('바탕화면 위젯: 구글 캘린더(iCal) 연결 → 달력·일�
   await teacher.locator('input[placeholder="이름 (예: 학교 일정)"]').fill('개인');
   await teacher.click('[data-testid=ical-add]');
   await until(async () => (await app.evaluate(() => globalThis.__ct.ctl.data.widget.calendars.map((c) => c.name).join())) === '학교 일정,개인', 8000, '두 번째 캘린더 연결 안 됨');
-  // 학교 일정만 학생 화면에 보이기
-  await teacher.locator('[data-testid=calendar-list] tbody tr').first().locator('td').nth(2).locator('input').click();
-  await until(async () => await app.evaluate(() => globalThis.__ct.ctl.data.widget.calendars[0].showOnStudent), 3000, '학생 화면 보이기 설정 안 됨');
   // 학교(급식) 고르기
   await teacher.fill('[data-testid=school-q]', '서울테스트');
   await teacher.click('[data-testid=school-search]');
@@ -629,14 +626,32 @@ await check('바탕화면 위젯: 구글 캘린더(iCal) 연결 → 달력·일�
   await ww.screenshot({ path: path.join(shots, '18-widget-board.png') });
 });
 
-await check('학생 화면에 이번 주 일정: 학생 화면에 보이기로 고른 캘린더만', async () => {
-  await teacher.click('[data-testid=agenda-to-student]');
+await check('학생용 위젯: 큰 시계 → 칠판 → 칠판+타이머 → 닫으면 칠판, 시계로 되돌리기 · 구글 일정 없음', async () => {
+  await teacher.fill('[data-testid=student-notice]', '내일 준비물: 리코더');
+  await teacher.click('[data-testid=student-widget-show]'); // 입력칸을 벗어나며 알림장 저장
   const sw = await studentWin(app);
-  await sw.waitForSelector('[data-testid=student-agenda]', { timeout: 5000 });
-  const t = await sw.textContent('[data-testid=student-agenda]');
-  assert(t.includes('공문 제출') && t.includes('학년 협의회'), '학교 일정이 학생 화면에 없음: ' + t);
-  assert(!t.includes('개인 병원') && !t.includes('학부모 상담'), '개인·내 일정이 학생 화면에 보임');
-  await sw.screenshot({ path: path.join(shots, '19-student-agenda.png') });
+  await sw.waitForSelector('[data-testid=student-widget][data-main=clock]', { timeout: 5000 });
+  await sw.waitForSelector('[data-testid=sw-clock]');
+  await until(async () => (await sw.textContent('[data-testid=sw-notice]')).includes('리코더'), 3000, '알림장이 보이지 않음');
+  assert((await sw.textContent('[data-testid=sw-meal]')).includes('귀리밥'), '학생 위젯에 급식 없음');
+  const all = await sw.textContent('[data-testid=student-widget]');
+  assert(!all.includes('공문 제출') && !all.includes('개인 병원') && !all.includes('학부모 상담'), '학생 위젯에 구글·내 일정이 보임');
+  await sw.screenshot({ path: path.join(shots, '19-student-widget-clock.png') });
+  // 칠판 표시 → 큰 칸에 칠판
+  await dispatch(app, { type: 'board/updateDraft', patch: { text: '조용히 책 읽기' } });
+  await dispatch(app, { type: 'board/publish' });
+  await sw.waitForSelector('[data-testid=student-widget][data-main=board] [data-testid=board-text]', { timeout: 3000 });
+  // 타이머 (함께 보기) → 큰 칸에 칠판+타이머
+  await dispatch(app, { type: 'timer/start', durationSec: 90, activity: '책 읽기', sound: 'none', volume: 0, mode: 'split' });
+  await sw.waitForSelector('[data-testid=student-widget][data-main=split] [data-testid=split-timer]', { timeout: 3000 });
+  await sw.screenshot({ path: path.join(shots, '20-student-widget-split.png') });
+  await dispatch(app, { type: 'timer/setMode', mode: 'full' });
+  await sw.waitForSelector('[data-testid=student-widget][data-main=timer] .st-timer-full', { timeout: 3000 });
+  await dispatch(app, { type: 'timer/close' });
+  await sw.waitForSelector('[data-testid=student-widget][data-main=board]', { timeout: 3000 });
+  await teacher.click('[data-testid=sw-main-clock]');
+  await sw.waitForSelector('[data-testid=student-widget][data-main=clock]', { timeout: 3000 });
+  await dispatch(app, { type: 'board/updateDraft', patch: { text: '오늘의 할 일\n1. 수학 익힘책 24쪽\n2. 받아쓰기 연습' } });
   await dispatch(app, { type: 'student/base', base: 'board' });
 });
 

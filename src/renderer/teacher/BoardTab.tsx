@@ -105,6 +105,7 @@ export function BoardTab() {
               )}
               {fullTimer && <div className="alert info">지금은 전체 화면 타이머가 표시 중입니다. 표시한 칠판 문구는 타이머를 닫으면 바로 보입니다.</div>}
               {studentView.timer?.mode === 'split' && <div className="alert info">칠판 + 타이머 함께 보기 중입니다. 표시를 누르면 타이머는 그대로 두고 문구만 바뀝니다.</div>}
+              {studentView.base === 'widget' && <div className="alert info">학생 화면에 학생용 위젯이 떠 있습니다. ‘학생 화면에 표시’를 누르면 위젯의 큰 시계 자리에 칠판이 뜹니다. 시계로 되돌리려면 오른쪽 ‘큰 칸: 시계’를 누르세요.</div>}
             </div>
           </div>
 

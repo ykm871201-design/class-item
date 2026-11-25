@@ -328,11 +328,13 @@ export class Controller {
         return;
       case 'student/base': {
         const base = a.base as AppData['studentBase'];
-        if (!['blank', 'board', 'seating', 'picker', 'agenda'].includes(base)) return { ok: false };
+        if (!['blank', 'board', 'seating', 'picker', 'widget'].includes(base)) return { ok: false };
+        if (base === 'widget' && a.main) this.data.studentWidgetMain = a.main === 'board' ? 'board' : 'clock';
         if (base === 'seating' && !this.rt.seatingReveal && !c.seating.confirmed) return { ok: false, error: '확정된 자리 배치가 없습니다.' };
         this.data.studentBase = base;
         if (base === 'seating' && a.confirmed) this.rt.seatingReveal = null;
-        if (a.dismissTimer !== false) this.dismissTimerForOtherView();
+        // 학생용 위젯은 큰 칸에 타이머를 보여 주므로 진행 중인 타이머를 내리지 않는다
+        if (a.dismissTimer !== false && base !== 'widget') this.dismissTimerForOtherView();
         this.ports.showStudent({ inactive: false, reason: 'teacher' });
         return;
       }
@@ -599,9 +601,13 @@ export class Controller {
         return;
 
       // ----- 바탕화면 위젯 -----
+      case 'student/widgetMain':
+        this.data.studentWidgetMain = a.main === 'board' ? 'board' : 'clock';
+        return;
       case 'widget/update': {
         const w = this.data.widget;
         const p = a.patch ?? {};
+        if (typeof p.studentNotice === 'string') w.studentNotice = p.studentNotice.slice(0, 1000);
         for (const k of ['showOnStartup', 'localShowOnStudent', 'holidays', 'holidaysOnStudent', 'glass'] as const) if (typeof p[k] === 'boolean') w[k] = p[k];
         if (typeof p.weatherRegion === 'string') w.weatherRegion = p.weatherRegion;
         if (typeof p.background === 'string') w.background = p.background;
@@ -614,6 +620,8 @@ export class Controller {
             count: clamp(Math.round(+q.count || 6), 1, 10),
             lunchAfter: clamp(Math.round(+q.lunchAfter || 0), 0, 10),
             lunchLen: clamp(Math.round(+q.lunchLen || 0), 0, 120),
+            playAfter: clamp(Math.round(+q.playAfter || 0), 0, 10),
+            playLen: clamp(Math.round(+q.playLen || 0), 0, 60),
           };
         }
         return;
@@ -705,6 +713,12 @@ export class Controller {
   /** 작성 중인 칠판을 학생 화면에 표시 (함께 보기 중이면 타이머는 그대로 두고 문구만 갱신) */
   private publishBoard(): void {
     this.data.boardPublished = { ...this.data.boardDraft };
+    // 학생용 위젯을 보여 주는 중이면 화면을 바꾸지 않고 큰 시계 자리에 칠판을 띄운다
+    if (this.data.studentBase === 'widget') {
+      this.data.studentWidgetMain = 'board';
+      this.ports.showStudent({ inactive: false, reason: 'teacher' });
+      return;
+    }
     if (this.data.studentBase !== 'board') {
       this.data.studentBase = 'board';
       this.rt.seatingReveal = null;

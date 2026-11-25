@@ -1,12 +1,12 @@
 // 위젯 보드 공용 로직: 교시 계산, 일정 합치기, 이번 주 일정, 날씨 지역, 학생 화면 일정
-import type { AppData, CalEvent, PeriodConfig, StudentAgendaView, WidgetData } from './types';
+import type { CalEvent, PeriodConfig, WidgetData } from './types';
 import { koreanHolidays } from './holidays';
-import { WEEKDAY_KO, localDateKey, pad2 } from './util';
+import { pad2 } from './util';
 
 // ---------------- 교시 ----------------
 
 export interface PeriodSlot {
-  kind: 'class' | 'lunch';
+  kind: 'class' | 'lunch' | 'play';
   no: number; // 교시 번호 (점심은 0)
   label: string;
   start: number; // 하루 중 분
@@ -27,16 +27,20 @@ export function buildPeriods(c: PeriodConfig): PeriodSlot[] {
   for (let i = 1; i <= c.count; i++) {
     out.push({ kind: 'class', no: i, label: `${i}교시`, start: t, end: t + c.length });
     t += c.length;
+    if (i === c.count) break;
     if (c.lunchAfter === i && c.lunchLen > 0) {
       out.push({ kind: 'lunch', no: 0, label: '점심시간', start: t, end: t + c.lunchLen });
       t += c.lunchLen;
+    } else if (c.playAfter === i && c.playLen > 0) {
+      out.push({ kind: 'play', no: 0, label: '중간놀이', start: t, end: t + c.playLen });
+      t += c.playLen;
     } else t += c.breakLen;
   }
   return out;
 }
 
 export interface PeriodNow {
-  state: 'before' | 'class' | 'lunch' | 'break' | 'after' | 'weekend';
+  state: 'before' | 'class' | 'lunch' | 'play' | 'break' | 'after' | 'weekend';
   title: string; // 크게 보일 말 (예: 3교시, 쉬는 시간)
   sub: string; // 예: 4교시까지
   progress: number; // 0~1 (지금 칸 안에서)
@@ -60,7 +64,7 @@ export function periodNow(c: PeriodConfig, now: Date): PeriodNow {
     const s = slots[i];
     if (mins >= s.start && mins < s.end) {
       const next = slots.slice(i + 1).find((x) => x.kind === 'class') ?? null;
-      return { state: s.kind === 'lunch' ? 'lunch' : 'class', title: s.label, sub: next ? `다음 ${next.label}` : '마지막 시간', progress: (mins - s.start) / (s.end - s.start), remainSec: Math.round((s.end - mins) * 60), current: s, next };
+      return { state: s.kind, title: s.label, sub: next ? `다음 ${next.label}` : '마지막 시간', progress: (mins - s.start) / (s.end - s.start), remainSec: Math.round((s.end - mins) * 60), current: s, next };
     }
     const n = slots[i + 1];
     if (n && mins >= s.end && mins < n.start) {
@@ -128,30 +132,6 @@ export function eventTimeLabel(e: CalEvent): string | null {
   if (e.allDay) return null;
   const d = new Date(e.start);
   return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
-}
-
-/** 학생 화면 '이번 주 일정' (학생 화면에 보이기로 고른 캘린더만) */
-export function studentAgenda(data: AppData, google: CalEvent[], now: number): StudentAgendaView {
-  const mon = mondayOf(new Date(now));
-  const from = mon.getTime();
-  const to = from + 7 * 86400_000 - 1;
-  const ev = mergedEvents(data.widget, google, from, to, { studentOnly: true });
-  const today = localDateKey(now);
-  const days: StudentAgendaView['days'] = [];
-  for (let i = 0; i < 7; i++) {
-    const d = new Date(mon.getFullYear(), mon.getMonth(), mon.getDate() + i);
-    const key = localDateKey(d);
-    const items = eventsOn(ev, key);
-    if (i >= 5 && items.length === 0) continue; // 주말은 일정이 있을 때만
-    days.push({
-      date: key,
-      label: `${d.getMonth() + 1}/${d.getDate()} (${WEEKDAY_KO[d.getDay()]})`,
-      isToday: key === today,
-      holiday: items.some((x) => x.calId === 'holiday') || d.getDay() === 0,
-      items: items.map((x) => ({ title: x.title, time: eventTimeLabel(x), color: x.color })),
-    });
-  }
-  return { title: '이번 주 일정', days };
 }
 
 // ---------------- 날씨 ----------------
