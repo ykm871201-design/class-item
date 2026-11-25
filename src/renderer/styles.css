@@ -99,9 +99,9 @@ body.student.hide-cursor, body.student.hide-cursor * { cursor: none; }
 .sw-clock-bar > div { height: 100%; background: #3b5bdb; }
 .sw-clock-sub { width: 80%; display: flex; justify-content: space-between; font-size: 5cqh; font-weight: 700; color: #495057; }
 .sw-today { display: flex; gap: 0.8cqw; height: calc(100% - 4cqh); align-items: stretch; }
-.sw-today-item { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; background: #f1f3f5; border-radius: 1.2cqh; min-width: 0; }
+.sw-today-item { flex: 1; display: flex; flex-direction: column; align-items: center; background: #f1f3f5; border-radius: 1.2cqh; min-width: 0; padding: 0.6cqh 0.3cqw 0.8cqh; }
 .sw-today-item .no { font-size: 2cqh; color: #868e96; font-weight: 700; }
-.sw-today-item .subj { font-size: 3.2cqh; font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 95%; }
+.sw-today-item .subj { flex: 1; width: 100%; min-height: 0; }
 .sw-today-item.cur { background: #dbe4ff; outline: 0.4cqh solid #3b5bdb; }
 .sw-notice-text { font-size: 3cqh; font-weight: 700; white-space: pre-wrap; line-height: 1.35; overflow: hidden; }
 .sw-cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 0.3cqh; text-align: center; }
@@ -126,7 +126,7 @@ body.student.hide-cursor, body.student.hide-cursor * { cursor: none; }
 .sw-tt { width: 100%; border-collapse: separate; border-spacing: 0.3cqh; table-layout: fixed; }
 .sw-tt th { font-size: 1.7cqh; color: #868e96; }
 .sw-tt th.today { color: #3b5bdb; }
-.sw-tt td { background: #f1f3f5; border-radius: 0.6cqh; text-align: center; font-size: 1.9cqh; font-weight: 700; height: 3.2cqh; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sw-tt td { background: #f1f3f5; border-radius: 0.6cqh; height: 3.6cqh; padding: 0 0.2cqw; }
 .sw-tt td.filled { background: #e7f5ff; }
 .sw-tt td.cur { outline: 0.3cqh solid #3b5bdb; background: #dbe4ff; }
 
@@ -288,6 +288,11 @@ input[type=color] { width: 36px; height: 32px; padding: 0; border: 1px solid var
 .tt-edit th.today { color: var(--primary); }
 .tt-edit td.today input { background: var(--primary-soft); }
 .tt-edit input { width: 100%; text-align: center; font-weight: 700; padding: 7px 4px; }
+/* 칸 안에 글자 맞추기 (줄바꿈 + 글자 크기 줄이기, 잘라내지 않음) */
+.fit-text { padding: 0 !important; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; text-align: center; white-space: pre-wrap; word-break: keep-all; overflow-wrap: anywhere; line-height: 1.15; overflow: hidden; }
+.fit-text > span { display: block; width: 100%; }
+.tt td > .fit-text { height: 30px; }
+.sw-tt td > .fit-text { height: 3.6cqh; }
 .progress { height: 10px; background: #e9ecef; border-radius: 999px; overflow: hidden; }
 .progress-fill { height: 100%; background: var(--primary); transition: width 0.2s; }
 .group-editor { background: #f8f9fb; border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; margin-top: 10px; }
@@ -432,7 +437,7 @@ body.widget { overflow: hidden; font-size: 14px; background: transparent; }
 .tt { width: 100%; border-collapse: separate; border-spacing: 3px; table-layout: fixed; }
 .tt th { font-size: 12px; color: #5b6573; font-weight: 700; }
 .tt th.today { color: #4c6ef5; }
-.tt td { background: #f8f9fa; border-radius: 6px; text-align: center; font-size: 13px; font-weight: 700; height: 28px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; cursor: default; }
+.tt td { background: #f8f9fa; border-radius: 6px; height: 30px; padding: 0 2px; cursor: default; }
 .tt td.filled { background: #e7f5ff; }
 .tt td.cur { outline: 2px solid #4c6ef5; background: #dbe4ff; }
 .tt td input { width: 100%; border: 0; text-align: center; font: inherit; background: #fff; }

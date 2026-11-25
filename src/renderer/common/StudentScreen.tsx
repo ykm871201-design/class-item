@@ -8,6 +8,7 @@ import { REGIONS, airGrade, buildPeriods, periodNow, weatherText } from '../../s
 import { WEEKDAY_KO, localDateKey, pad2 } from '../../shared/util';
 import { formatClock } from '../../shared/util';
 import { fitFontPx, widestAt100 } from './fit';
+import { FitText } from './FitText';
 import { useNow, useSize, useFontsReady } from './hooks';
 
 const LINE_HEIGHT = 1.3;
@@ -349,7 +350,7 @@ function TodayTimetable({ w, now }: { w: StudentWidgetView; now: number }) {
       {slots.map((s) => (
         <div key={s.no} className={`sw-today-item${p.current?.kind === 'class' && p.current.no === s.no ? ' cur' : ''}`}>
           <span className="no">{s.no}</span>
-          <span className="subj">{w.timetable[dow - 1]?.[s.no - 1] || '—'}</span>
+          <FitText className="subj" text={w.timetable[dow - 1]?.[s.no - 1] || '—'} ratio={0.62} />
         </div>
       ))}
     </div>
@@ -379,7 +380,7 @@ function WeekTimetable({ w, now }: { w: StudentWidgetView; now: number }) {
             <th>{no + 1}</th>
             {[0, 1, 2, 3, 4].map((day) => (
               <td key={day} className={`${w.timetable[day]?.[no] ? 'filled' : ''}${day === today && p.current?.kind === 'class' && p.current.no === no + 1 ? ' cur' : ''}`}>
-                {w.timetable[day]?.[no] ?? ''}
+                <FitText text={w.timetable[day]?.[no] ?? ''} ratio={0.62} />
               </td>
             ))}
           </tr>

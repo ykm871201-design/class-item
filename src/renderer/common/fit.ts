@@ -3,6 +3,8 @@ export interface FitStyle {
   bold: boolean;
   align: 'left' | 'center';
   lineHeight: number;
+  /** 'normal'이면 낱말 중간에서 줄을 바꾸지 않음 (낱말이 너무 길면 맞지 않는 것으로 판단) */
+  wrap?: 'anywhere' | 'normal';
 }
 
 let measurer: HTMLDivElement | null = null;
@@ -34,6 +36,7 @@ export function fitFontPx(text: string, width: number, height: number, maxPx: nu
   el.style.fontWeight = style.bold ? '800' : '500';
   el.style.textAlign = style.align;
   el.style.lineHeight = String(style.lineHeight);
+  el.style.overflowWrap = style.wrap ?? 'anywhere';
   el.textContent = text.length ? text + (text.endsWith('\n') ? ' ' : '') : ' ';
   const fits = (px: number) => {
     el.style.fontSize = `${px}px`;

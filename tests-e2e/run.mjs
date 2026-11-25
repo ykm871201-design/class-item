@@ -699,6 +699,44 @@ await check('위젯 탭 시간표 설정: 칸 입력·엑셀 붙여넣기 → �
   await teacher.locator('[data-testid=timetable-settings]').screenshot({ path: path.join(shots, '22-teacher-timetable-settings.png') });
 });
 
+await check('긴 과목 이름도 잘리지 않음 (학생 위젯 오늘·이번 주 시간표, 교사용 위젯 시간표)', async () => {
+  const dow = new Date().getDay();
+  const day = dow >= 1 && dow <= 5 ? dow - 1 : 0;
+  const long = ['즐거운 생활', '슬기로운 생활 탐구', '안전한 생활과 놀이 활동', '창의적 체험활동 동아리'];
+  for (let i = 0; i < long.length; i++) await dispatch(app, { type: 'widget/timetable', day, period: i, value: long[i] });
+  const check = (page) =>
+    page.$$eval('[data-fit-text]', (els) =>
+      els.filter((e) => e.getAttribute('data-fit-text')).map((e) => {
+        const sp = e.querySelector('span');
+        const a = e.getBoundingClientRect();
+        const b = sp.getBoundingClientRect();
+        return { t: e.getAttribute('data-fit-text'), ok: sp.textContent === e.getAttribute('data-fit-text') && b.width <= a.width + 1 && b.height <= a.height + 1 && sp.scrollWidth <= e.clientWidth + 1 };
+      }),
+    );
+  await dispatch(app, { type: 'student/base', base: 'widget', main: 'clock' });
+  const sw = await studentWin(app);
+  await sw.waitForSelector('[data-sw-card=today] [data-fit-text]');
+  await sleep(500);
+  const rs = await check(sw);
+  const bad = rs.filter((r) => !r.ok);
+  assert(rs.some((r) => r.t === '안전한 생활과 놀이 활동') && bad.length === 0, '학생 위젯에서 잘린 칸: ' + JSON.stringify(bad));
+  for (const sz of [[1280, 720], [1024, 768]]) {
+    await app.evaluate(({}, [w, h]) => { const win = globalThis.__ct.student.win; win.setFullScreen(false); win.setContentSize(w, h); }, sz);
+    await sleep(500);
+    const b2 = (await check(sw)).filter((r) => !r.ok);
+    assert(b2.length === 0, `${sz.join('x')}에서 잘린 칸: ` + JSON.stringify(b2));
+  }
+  await app.evaluate(() => { globalThis.__ct.student.currentDisplayId = null; globalThis.__ct.student.show(true); });
+  await sleep(500);
+  if (dow >= 1 && dow <= 5) await sw.locator('[data-sw-card=today]').screenshot({ path: path.join(shots, '23-student-today-long.png') });
+  const ww = await widgetWin();
+  if (ww) {
+    const b3 = (await check(ww)).filter((r) => !r.ok);
+    assert(b3.length === 0, '교사용 위젯에서 잘린 칸: ' + JSON.stringify(b3));
+  }
+  await dispatch(app, { type: 'student/base', base: 'board' });
+});
+
 await check('교사 화면 스크린샷', async () => {
   await teacher.click('[data-tab=seating]');
   await teacher.screenshot({ path: path.join(shots, '09-teacher-seating.png') });

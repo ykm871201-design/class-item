@@ -7,6 +7,7 @@ import { BOARD_BACKGROUNDS, MEMO_COLORS } from '../../shared/defaults';
 import { holidayName } from '../../shared/holidays';
 import { WEEKDAY_KO, localDateKey, pad2 } from '../../shared/util';
 import { useNow } from '../common/hooks';
+import { FitText } from '../common/FitText';
 import { StateCtx, act, api, dismissToast, toast, useAppState, useToasts } from '../teacher/api';
 
 function App() {
@@ -582,7 +583,7 @@ function TimetableCard() {
                         onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); if (e.key === 'Escape') setEdit(null); }}
                       />
                     ) : (
-                      v
+                      <FitText text={v} ratio={0.6} maxPx={14} />
                     )}
                   </td>
                 );
