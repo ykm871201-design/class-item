@@ -108,6 +108,7 @@ export function defaultWidget(): WidgetData {
     background: 'sky',
     studentNotice: '',
     studentHiddenCards: [],
+    studentOnTop: true,
   };
 }
 
@@ -335,6 +336,7 @@ function normWidget(v: unknown): WidgetData {
     background: str(v.background, 'sky'),
     studentNotice: str(v.studentNotice, '').slice(0, 1000),
     studentHiddenCards: arr(v.studentHiddenCards, (x) => (STUDENT_CARDS.some((c) => c.id === x) ? (x as StudentCardId) : null)),
+    studentOnTop: bool(v.studentOnTop, true),
   };
 }
 

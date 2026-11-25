@@ -640,7 +640,7 @@ export class Controller {
         const w = this.data.widget;
         const p = a.patch ?? {};
         if (typeof p.studentNotice === 'string') w.studentNotice = p.studentNotice.slice(0, 1000);
-        for (const k of ['showOnStartup', 'localShowOnStudent', 'holidays', 'holidaysOnStudent', 'glass'] as const) if (typeof p[k] === 'boolean') w[k] = p[k];
+        for (const k of ['showOnStartup', 'localShowOnStudent', 'holidays', 'holidaysOnStudent', 'glass', 'studentOnTop'] as const) if (typeof p[k] === 'boolean') w[k] = p[k];
         if (typeof p.weatherRegion === 'string') w.weatherRegion = p.weatherRegion;
         if (typeof p.background === 'string') w.background = p.background;
         if (p.periods && typeof p.periods === 'object') {

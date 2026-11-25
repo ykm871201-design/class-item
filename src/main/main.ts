@@ -188,17 +188,30 @@ class StudentWindow {
    * 맨 위 표시 결정.
    * - 설정 '학생 화면을 다른 창보다 위에 표시'(기본 켜짐)가 켜져 있으면 학생 화면이 보이는 동안 항상 맨 위
    * - 설정이 꺼져 있어도 타이머가 표시 중이면 맨 위 (타이머를 닫으면 원래대로)
+   * - 학생용 위젯을 띄운 동안에는 위젯 설정 '다른 창보다 항상 위에 표시'를 따른다
    * - 미리보기 창(교사용 모니터에서 시험)은 맨 위로 올리지 않는다
    */
+  private wantTop(w: BrowserWindow): boolean {
+    const pref = ctl.data.studentBase === 'widget' ? ctl.data.widget.studentOnTop : ctl.data.settings.studentAlwaysOnTop;
+    return (this.topmost || pref) && this.mode === 'display' && w.isVisible() && !w.isMinimized();
+  }
+
   applyTopmost(timerOn: boolean): void {
     this.topmost = timerOn;
     const w = this.win;
     if (!w || w.isDestroyed()) return;
-    const want = (timerOn || ctl.data.settings.studentAlwaysOnTop) && this.mode === 'display' && w.isVisible() && !w.isMinimized();
+    const want = this.wantTop(w);
     if (want) {
       w.setAlwaysOnTop(true, 'screen-saver');
       w.moveTop();
     } else w.setAlwaysOnTop(false);
+  }
+
+  /** 상태가 바뀔 때(위젯 ↔ 다른 화면, 위젯 설정 변경) 맨 위 여부가 달라졌을 때만 다시 적용 */
+  syncTopmost(): void {
+    const w = this.win;
+    if (!w || w.isDestroyed()) return;
+    if (this.wantTop(w) !== w.isAlwaysOnTop()) this.applyTopmost(this.topmost);
   }
 
   /** 디스플레이 연결·해제 대응 */
@@ -408,6 +421,7 @@ function init(): void {
       if (teacherWin && !teacherWin.isDestroyed()) teacherWin.webContents.send('state', state);
       widget?.send('state', state);
       student.send(state.studentView);
+      student.syncTopmost();
     },
     studentWindowStatus: () => student.status(),
     displays: () => {

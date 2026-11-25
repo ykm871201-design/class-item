@@ -383,6 +383,20 @@ function StudentWidgetSettings() {
         ))}
       </div>
       <p className="small muted" style={{ margin: '4px 0 0' }}>칸을 끄면 남은 칸이 빈자리를 채웁니다. 오른쪽 칸을 모두 끄면 큰 시계가 화면 너비 전체를 씁니다.</p>
+      <div className="row" style={{ marginTop: 10 }}>
+        <label className="inline">
+          <input
+            type="checkbox"
+            checked={w.studentOnTop}
+            onChange={(e) => act('widget/update', { patch: { studentOnTop: e.target.checked } }, e.target.checked ? '학생 위젯을 다른 창보다 항상 위에 표시합니다.' : '학생 위젯을 다른 창 위에 고정하지 않습니다.')}
+            data-testid="student-widget-ontop"
+          />
+          학생 위젯을 다른 창보다 항상 위에 표시
+        </label>
+      </div>
+      <p className="small muted" style={{ margin: '4px 0 0' }}>
+        끄면 학생 화면 모니터에서 다른 프로그램(PPT, 동영상 등)을 열 때 그 창이 위젯 위로 올라옵니다. 단, 큰 칸에 타이머를 띄우는 동안에는 잠시 맨 위에 표시합니다. 위젯이 아닌 칠판·자리 배치 등은 ‘설정’ 탭의 맨 위 표시 설정을 따릅니다.
+      </p>
       <div className="col" style={{ marginTop: 10 }}>
         <span className="field-label">알림장 (학생 위젯 아래쪽에 보임)</span>
         <textarea rows={3} value={notice} maxLength={1000} placeholder={'예: 내일 준비물 - 리코더, 색연필\n수요일 현장체험학습 동의서 제출'} onChange={(e) => setNotice(e.target.value)} onBlur={() => notice !== w.studentNotice && act('widget/update', { patch: { studentNotice: notice } }, '알림장을 저장했습니다.')} data-testid="student-notice" />

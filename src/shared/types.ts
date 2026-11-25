@@ -256,6 +256,7 @@ export interface WidgetData {
   background: string; // 보드 배경 (그라데이션 ID)
   studentNotice: string; // 학생용 위젯 '알림장'
   studentHiddenCards: StudentCardId[]; // 학생용 위젯에서 끈 칸
+  studentOnTop: boolean; // 학생용 위젯을 띄운 동안 학생 화면을 다른 창보다 항상 위에 둘지
 }
 
 export interface AppData {

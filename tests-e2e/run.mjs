@@ -527,6 +527,23 @@ await check('항상 위 설정을 끄면: 평소에는 일반 창, 타이머 표
   await app.evaluate(() => globalThis.__ct.student.applyTopmost(false));
 });
 
+await check('학생 위젯의 맨 위 표시는 위젯 설정을 따로 따름 (끄면 일반 창, 다른 화면은 기본 설정)', async () => {
+  await dispatch(app, { type: 'student/base', base: 'widget', main: 'clock' });
+  await dispatch(app, { type: 'widget/update', patch: { studentOnTop: false } });
+  await new Promise((r) => setTimeout(r, 200));
+  assert(!(await swInfo(app)).top, '위젯 맨 위 설정을 꺼도 맨 위');
+  await dispatch(app, { type: 'student/base', base: 'board' });
+  await new Promise((r) => setTimeout(r, 200));
+  assert((await swInfo(app)).top, '칠판으로 바꾸면 기본 설정(맨 위)을 따라야 함');
+  await dispatch(app, { type: 'student/base', base: 'widget', main: 'clock' });
+  await new Promise((r) => setTimeout(r, 200));
+  assert(!(await swInfo(app)).top, '위젯으로 돌아오면 다시 일반 창이어야 함');
+  await dispatch(app, { type: 'widget/update', patch: { studentOnTop: true } });
+  await new Promise((r) => setTimeout(r, 200));
+  assert((await swInfo(app)).top, '위젯 맨 위 설정을 켜도 맨 위가 아님');
+  await dispatch(app, { type: 'student/base', base: 'blank' });
+});
+
 await check('표시 방식 전환 시 남은 시간·일시정지 유지', async () => {
   await dispatch(app, { type: 'timer/start', durationSec: 120, activity: '모둠 활동', sound: 'none', volume: 0, mode: 'split' });
   await sleep(1200);

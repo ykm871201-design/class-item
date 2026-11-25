@@ -70,7 +70,7 @@ export function SettingsTab() {
         <div className="row">
           <label className="inline">
             <input type="checkbox" checked={st.studentAlwaysOnTop} onChange={(e) => call({ type: 'setAlwaysOnTop', value: e.target.checked })} data-testid="always-on-top" />
-            학생 화면을 다른 창보다 항상 위에 표시 (‘학생 화면 숨기기’를 누르면 내려가서 다른 창이 보입니다)
+            학생 화면을 다른 창보다 항상 위에 표시 (‘학생 화면 숨기기’를 누르면 내려가서 다른 창이 보입니다 · 학생용 위젯은 위젯 탭에서 따로 정합니다)
           </label>
         </div>
         <div className="row">

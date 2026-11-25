@@ -269,3 +269,15 @@ describe('시간표 붙여넣기', () => {
     expect(parseTimetablePaste('  \n ')).toBeNull();
   });
 });
+
+describe('학생 위젯 맨 위 표시 설정', () => {
+  it('기본은 켜짐, 예전 저장 파일(값 없음)도 켜짐으로 읽고 끈 값은 유지', () => {
+    expect(defaultWidget().studentOnTop).toBe(true);
+    const d = defaultData();
+    const old = JSON.parse(JSON.stringify(d));
+    delete old.widget.studentOnTop;
+    expect(normalizeData(old).widget.studentOnTop).toBe(true);
+    old.widget.studentOnTop = false;
+    expect(normalizeData(old).widget.studentOnTop).toBe(false);
+  });
+});
