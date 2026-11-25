@@ -46,7 +46,8 @@ function BoardArea({ board, w, h, refH }: { board: StudentBoardView; w: number; 
       <div
         className="st-board-text"
         data-testid="board-text"
-        style={{ fontSize: px, fontWeight: board.bold ? 800 : 500, textAlign: board.align, lineHeight: LINE_HEIGHT, justifyContent: board.align === 'center' ? 'center' : 'flex-start' }}
+        data-valign={board.vAlign ?? 'middle'}
+        style={{ fontSize: px, fontWeight: board.bold ? 800 : 500, textAlign: board.align, lineHeight: LINE_HEIGHT, justifyContent: board.align === 'center' ? 'center' : 'flex-start', alignItems: board.vAlign === 'top' ? 'flex-start' : board.vAlign === 'bottom' ? 'flex-end' : 'center' }}
       >
         <span style={{ width: '100%' }}>{board.text}</span>
       </div>

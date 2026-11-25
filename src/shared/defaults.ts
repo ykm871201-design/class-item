@@ -24,7 +24,7 @@ export const SOUNDS: { id: SoundId; name: string }[] = [
 ];
 
 export function defaultBoard(): BoardStyle {
-  return { text: '', fontSize: 14, color: '#1f2328', bg: '#ffffff', align: 'center', bold: true, autoFit: true };
+  return { text: '', fontSize: 14, color: '#1f2328', bg: '#ffffff', align: 'center', vAlign: 'middle', bold: true, autoFit: true };
 }
 
 export function defaultSettings(): Settings {
@@ -155,6 +155,7 @@ function normBoard(v: unknown): BoardStyle {
     color: color(v.color, d.color),
     bg: color(v.bg, d.bg),
     align: v.align === 'left' ? 'left' : 'center',
+    vAlign: v.vAlign === 'top' || v.vAlign === 'bottom' ? v.vAlign : 'middle',
     bold: bool(v.bold, d.bold),
     autoFit: bool(v.autoFit, d.autoFit),
   };

@@ -210,3 +210,18 @@ describe('[검토 10] 가져오기·복원 시 중복 ID와 손상된 학급', (
     expect(validateImport({ version: 1, classes: [{ id: 'c', name: 'x', students: [] }] }).ok).toBe(true);
   });
 });
+
+describe('칠판 세로 정렬', () => {
+  it('기본은 가운데, 위쪽·아래쪽 저장·복원, 잘못된 값은 가운데', () => {
+    const d = defaultData();
+    expect(d.boardDraft.vAlign).toBe('middle');
+    const { ctl } = makeCtl(d);
+    ctl.dispatch({ type: 'board/updateDraft', patch: { vAlign: 'top', text: '위쪽 글' } });
+    ctl.dispatch({ type: 'board/publish' });
+    expect(ctl.studentView().board.vAlign).toBe('top');
+    ctl.dispatch({ type: 'board/updateDraft', patch: { vAlign: 'sideways' } });
+    expect(ctl.data.boardDraft.vAlign).toBe('top');
+    expect(normalizeData(JSON.parse(JSON.stringify({ ...ctl.data, boardDraft: { ...ctl.data.boardDraft, vAlign: 'bottom' } }))).boardDraft.vAlign).toBe('bottom');
+    expect(normalizeData({ version: 1, classes: [{ id: 'c', students: [] }], boardDraft: { text: 'x' } }).boardDraft.vAlign).toBe('middle');
+  });
+});

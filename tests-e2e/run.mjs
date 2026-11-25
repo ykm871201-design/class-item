@@ -169,6 +169,29 @@ await check('학생 화면에 표시 → TV 디스플레이에 칠판 표시', a
   await sw.screenshot({ path: path.join(shots, '01-student-board.png') });
 });
 
+await check('칠판 세로 정렬: 위쪽·가운데·아래쪽', async () => {
+  await teacher.click('[data-tab=board]');
+  await dispatch(app, { type: 'board/updateDraft', patch: { text: '짧은 문장', autoFit: false, fontSize: 10 } });
+  const sw = await studentWin(app);
+  const pos = async (v) => {
+    await teacher.click(`[data-testid=board-valign] [data-valign=${v}]`);
+    await teacher.click('[data-testid=board-publish]');
+    await sw.waitForSelector(`[data-testid=board-text][data-valign=${v}]`, { timeout: 3000 });
+    return sw.evaluate(() => {
+      const box = document.querySelector('[data-testid=board-text]').getBoundingClientRect();
+      const t = document.querySelector('[data-testid=board-text] span').getBoundingClientRect();
+      return { top: t.top - box.top, bottom: box.bottom - t.bottom };
+    });
+  };
+  const top = await pos('top');
+  const mid = await pos('middle');
+  const bot = await pos('bottom');
+  assert(top.top < 5 && bot.bottom < 5 && Math.abs(mid.top - mid.bottom) < 5, JSON.stringify({ top, mid, bot }));
+  await sw.screenshot({ path: path.join(shots, '24-student-board-bottom.png') });
+  await teacher.click('[data-testid=board-valign] [data-valign=middle]');
+  await dispatch(app, { type: 'board/updateDraft', patch: { autoFit: true } });
+});
+
 await check('모니터 2대(학생 화면이 TV에 따로 있음): Esc를 눌러도 숨겨지지 않음', async () => {
   const sw = await studentWin(app);
   await app.evaluate(() => globalThis.__ct.student.win.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Escape' }));

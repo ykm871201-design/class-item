@@ -101,6 +101,8 @@ export interface ClassRoom {
 }
 
 export type TextAlign = 'left' | 'center';
+/** 칠판 글의 세로 위치 */
+export type VerticalAlign = 'top' | 'middle' | 'bottom';
 
 export interface BoardStyle {
   text: string;
@@ -108,6 +110,7 @@ export interface BoardStyle {
   color: string;
   bg: string;
   align: TextAlign;
+  vAlign: VerticalAlign;
   bold: boolean;
   autoFit: boolean;
 }
@@ -445,6 +448,7 @@ export interface StudentBoardView {
   color: string;
   bg: string;
   align: TextAlign;
+  vAlign: VerticalAlign;
   bold: boolean;
   autoFit: boolean;
 }

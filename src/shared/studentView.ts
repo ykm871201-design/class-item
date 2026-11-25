@@ -5,7 +5,7 @@ import { displayNames } from './roster';
 import { allSeats, columnGaps, disabledList, seatColumns, totalRows } from './seating';
 
 export function boardView(b: BoardStyle): StudentBoardView {
-  return { text: b.text, fontSize: b.fontSize, color: b.color, bg: b.bg, align: b.align, bold: b.bold, autoFit: b.autoFit };
+  return { text: b.text, fontSize: b.fontSize, color: b.color, bg: b.bg, align: b.align, vAlign: b.vAlign ?? 'middle', bold: b.bold, autoFit: b.autoFit };
 }
 
 export function seatingView(cls: ClassRoom, result: SeatingResult, reveal: { revealId: string; animate: boolean; startedAt: number }): StudentSeatingView {

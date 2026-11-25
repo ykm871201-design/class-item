@@ -827,6 +827,7 @@ function sanitizeBoardPatch(p: any) {
   if (typeof p.color === 'string' && /^#[0-9a-f]{6}$/i.test(p.color)) out.color = p.color;
   if (typeof p.bg === 'string' && /^#[0-9a-f]{6}$/i.test(p.bg)) out.bg = p.bg;
   if (p.align === 'left' || p.align === 'center') out.align = p.align;
+  if (p.vAlign === 'top' || p.vAlign === 'middle' || p.vAlign === 'bottom') out.vAlign = p.vAlign;
   if (typeof p.bold === 'boolean') out.bold = p.bold;
   if (typeof p.autoFit === 'boolean') out.autoFit = p.autoFit;
   return out;

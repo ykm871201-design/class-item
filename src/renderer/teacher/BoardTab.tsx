@@ -123,6 +123,7 @@ export function BoardTab() {
               <span className="small muted">{d.autoFit ? '자동' : `화면 높이의 ${d.fontSize}%`}</span>
             </div>
             <div className="row">
+              <span className="field-label">가로</span>
               <div className="seg">
                 <button className={d.align === 'left' ? 'on' : ''} onClick={() => patch({ align: 'left' })}>
                   왼쪽 정렬
@@ -134,6 +135,23 @@ export function BoardTab() {
               <button className={`btn ${d.bold ? 'sel' : ''}`} onClick={() => patch({ bold: !d.bold })} style={{ fontWeight: 900 }}>
                 굵게 {d.bold ? '켜짐' : '꺼짐'}
               </button>
+            </div>
+            <div className="row">
+              <span className="field-label">세로</span>
+              <div className="seg" data-testid="board-valign">
+                {(
+                  [
+                    ['top', '위쪽'],
+                    ['middle', '가운데'],
+                    ['bottom', '아래쪽'],
+                  ] as const
+                ).map(([v, label]) => (
+                  <button key={v} className={(d.vAlign ?? 'middle') === v ? 'on' : ''} onClick={() => patch({ vAlign: v })} data-valign={v}>
+                    {label}
+                  </button>
+                ))}
+              </div>
+              {d.autoFit && <span className="small muted">자동 크기는 글이 칸을 꽉 채워 위·아래 차이가 작을 수 있습니다</span>}
             </div>
             <div className="row">
               <span className="field-label">추천 색 조합</span>
