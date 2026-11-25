@@ -1,6 +1,6 @@
 // 기본값과 저장 데이터 정규화·가져오기 검증
 import type { AppData, BoardStyle, ClassRoom, PickerConfig, Schedule, SeatingConfig, SeatLayout, Settings, SoundId, Student } from './types';
-import { cleanLayout, suggestLayout, LIMITS } from './seating';
+import { cleanGroups, cleanLayout, suggestLayout, LIMITS } from './seating';
 import { clamp, newId } from './util';
 
 export const BOARD_THEMES: { name: string; color: string; bg: string }[] = [
@@ -110,21 +110,30 @@ function normStudent(v: unknown): Student | null {
     name: v.name.slice(0, 20),
     absentDate: typeof v.absentDate === 'string' ? v.absentDate : null,
     excluded: bool(v.excluded, false),
+    gender: v.gender === 'M' || v.gender === 'F' ? v.gender : null,
   };
 }
 
 const idList = (v: unknown) => arr(v, (x) => (typeof x === 'string' ? x : null));
 
+const genderMapOf = (v: unknown): Record<string, 'M' | 'F'> =>
+  isObj(v) ? (Object.fromEntries(Object.entries(v).filter(([, g]) => g === 'M' || g === 'F')) as Record<string, 'M' | 'F'>) : {};
+
 function normLayout(v: unknown): SeatLayout {
   const d = suggestLayout(24, 'pair');
   if (!isObj(v)) return d;
   return cleanLayout({
-    type: v.type === 'single' ? 'single' : 'pair',
+    type: v.type === 'single' ? 'single' : v.type === 'custom' ? 'custom' : 'pair',
     pairCols: clamp(Math.round(num(v.pairCols, d.pairCols)), LIMITS.pairCols.min, LIMITS.pairCols.max),
     cols: clamp(Math.round(num(v.cols, d.cols)), LIMITS.cols.min, LIMITS.cols.max),
     rows: clamp(Math.round(num(v.rows, d.rows)), LIMITS.rows.min, LIMITS.rows.max),
     disabledPair: idList(v.disabledPair),
     disabledSingle: idList(v.disabledSingle),
+    disabledCustom: idList(v.disabledCustom),
+    groups: Array.isArray(v.groups) ? cleanGroups(v.groups.filter(isObj).map((g) => ({ size: num(g.size, 2), rows: num(g.rows, 4) }))) : d.groups,
+    genderPair: genderMapOf(v.genderPair),
+    genderSingle: genderMapOf(v.genderSingle),
+    genderCustom: genderMapOf(v.genderCustom),
     pairsPerGroup: clamp(Math.round(num(v.pairsPerGroup, 1)), 1, 3),
   });
 }

@@ -1,5 +1,5 @@
 // 학생 명단: 붙여넣기 해석, 일괄 등록, 표시 이름, 결석/제외 판정
-import type { Student } from './types';
+import type { Gender, Student } from './types';
 import { newId } from './util';
 
 export const MAX_STUDENTS = 30;
@@ -8,6 +8,15 @@ export const MIN_STUDENTS = 5;
 export interface RosterEntry {
   number: number | null;
   name: string;
+  gender?: Gender | null;
+}
+
+/** '남', '여', '남자', 'M', 'F' 등을 성별로 해석 */
+export function parseGender(v: string): Gender | null {
+  const t = v.trim().toLowerCase();
+  if (/^(남|남자|남학생|남성|m|male|boy|b)$/.test(t)) return 'M';
+  if (/^(여|여자|여학생|여성|f|female|girl|g)$/.test(t)) return 'F';
+  return null;
 }
 
 export interface ParseResult {
@@ -15,7 +24,7 @@ export interface ParseResult {
   skipped: string[]; // 해석하지 못한 줄
 }
 
-const HEADER_WORDS = /^(번호|이름|성명|학생|no\.?|name|순번|출석번호)$/i;
+const HEADER_WORDS = /^(번호|이름|성명|학생|no\.?|name|순번|출석번호|성별|gender|sex)$/i;
 
 /**
  * 엑셀에서 복사한 "번호<탭>이름" 목록 또는 줄바꿈으로 구분한 이름 목록을 해석한다.
@@ -40,15 +49,30 @@ export function parseRosterText(text: string): ParseResult {
     if (cells.every((c) => HEADER_WORDS.test(c))) continue; // 머리글 줄
     let num: number | null = null;
     let name: string | null = null;
+    let gender: Gender | null = null;
     for (const c of cells) {
       const cleaned = c.replace(/번$/, '');
       if (num === null && name === null && /^\d{1,3}$/.test(cleaned)) {
         num = parseInt(cleaned, 10);
         continue;
       }
-      if (name === null && !/^\d+$/.test(c)) {
-        name = c;
-        break;
+      if (name !== null) {
+        if (gender === null) gender = parseGender(c);
+        continue;
+      }
+      // 이름보다 성별이 먼저 오는 표(번호·성별·이름)도 허용
+      if (gender === null && parseGender(c) && cells.length > 2) {
+        gender = parseGender(c);
+        continue;
+      }
+      if (!/^\d+$/.test(c)) name = c;
+    }
+    // "김민준 남"처럼 한 칸에 이름과 성별을 함께 쓴 경우
+    if (name && gender === null) {
+      const m = name.match(/^(.+?)\s+(남|여|남자|여자)$/);
+      if (m) {
+        name = m[1];
+        gender = parseGender(m[2]);
       }
     }
     if (!name) {
@@ -56,7 +80,7 @@ export function parseRosterText(text: string): ParseResult {
       continue;
     }
     if (name.length > 20) name = name.slice(0, 20);
-    entries.push({ number: num, name });
+    entries.push({ number: num, name, gender });
   }
   return { entries, skipped };
 }
@@ -100,10 +124,11 @@ export function mergeRoster(existing: Student[], entries: RosterEntry[], mode: '
     nextNum = Math.max(nextNum, num + 1);
     const idx = reusable.findIndex((s) => s.number === num && s.name === e.name);
     if (idx >= 0) {
-      base.push(reusable[idx]);
+      const kept = reusable[idx];
+      base.push(e.gender ? { ...kept, gender: e.gender } : kept);
       reusable.splice(idx, 1);
     } else {
-      base.push({ id: newId('s_'), number: num, name: e.name, absentDate: null, excluded: false });
+      base.push({ id: newId('s_'), number: num, name: e.name, absentDate: null, excluded: false, gender: e.gender ?? null });
     }
     added++;
   }

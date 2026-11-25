@@ -106,26 +106,15 @@ export function TimerPanel({ timer, variant }: { timer: StudentTimerView; varian
 }
 
 // ---------------- 자리 배치 ----------------
-function columnTracks(s: Pick<StudentSeatingView, 'type' | 'cols' | 'pairsPerGroup'>): { tracks: number[]; seatTrack: number[] } {
+/** 열 간격 목록으로 CSS 그리드 열 구성 (자리 1, 간격 비율) */
+export function seatGridTemplate(cols: number, gaps: number[]) {
   const tracks: number[] = [];
   const seatTrack: number[] = [];
-  for (let c = 0; c < s.cols; c++) {
-    if (c > 0) {
-      let gap = 0.22;
-      if (s.type === 'pair') {
-        if (c % 2 === 1) gap = 0.05; // 짝 사이
-        else gap = (c / 2) % s.pairsPerGroup === 0 ? 0.55 : 0.2; // 분단 사이 / 같은 분단의 짝 사이
-      }
-      tracks.push(gap);
-    }
+  for (let c = 0; c < cols; c++) {
+    if (c > 0) tracks.push(gaps[c - 1] ?? 0.22);
     seatTrack.push(tracks.length);
     tracks.push(1);
   }
-  return { tracks, seatTrack };
-}
-
-export function seatGridTemplate(s: Pick<StudentSeatingView, 'type' | 'cols' | 'pairsPerGroup'>) {
-  const { tracks, seatTrack } = columnTracks(s);
   return { template: tracks.map((t) => `${t}fr`).join(' '), seatTrack, total: tracks.reduce((a, b) => a + b, 0) };
 }
 
@@ -139,7 +128,7 @@ function SeatingBoard({ s }: { s: StudentSeatingView }) {
     const id = setInterval(() => setTick((x) => x + 1), 90);
     return () => clearInterval(id);
   }, [shuffling, s.revealId]);
-  const grid = seatGridTemplate(s);
+  const grid = seatGridTemplate(s.cols, s.gaps);
   const rowGap = 0.18;
   const cellW = size.w > 0 ? size.w / grid.total : 0;
   const cellH = size.h > 0 ? size.h / (s.rows + rowGap * (s.rows - 1)) : 0;

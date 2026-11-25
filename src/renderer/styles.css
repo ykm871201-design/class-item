@@ -213,6 +213,22 @@ input[type=color] { width: 36px; height: 32px; padding: 0; border: 1px solid var
 .legend span::before { content: ''; display: inline-block; width: 12px; height: 12px; border-radius: 3px; margin-right: 4px; vertical-align: -2px; border: 2px solid #c9d1da; background: #fff; }
 .legend .l-fixed::before { border-color: var(--lock); background: var(--lock-soft); }
 .legend .l-off::before { border-style: dashed; background: #eceff3; }
+.legend .l-m::before { border-color: #4dabf7; background: #e7f5ff; }
+.legend .l-f::before { border-color: #f783ac; background: #fff0f6; }
+.t-seat.g-m { background: #e7f5ff; border-color: #74c0fc; }
+.t-seat.g-f { background: #fff0f6; border-color: #faa2c1; }
+.t-seat.g-m.fixed, .t-seat.g-f.fixed { border-color: var(--lock); }
+.t-seat .gtag { display: inline-block; margin-right: 4px; font-size: 11px; font-weight: 800; padding: 0 5px; border-radius: 4px; color: #fff; vertical-align: 1px; }
+.t-seat.g-m .gtag { background: #339af0; }
+.t-seat.g-f .gtag { background: #f06595; }
+.pill.g-m { background: #e7f5ff; color: #1864ab; }
+.pill.g-f { background: #fff0f6; color: #a61e4d; }
+.gender-seg button { padding: 5px 12px; }
+.gender-seg button.on.g-M { background: #339af0; }
+.gender-seg button.on.g-F { background: #f06595; }
+.group-editor { background: #f8f9fb; border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; margin-top: 10px; }
+.group-row { padding: 4px 0; border-bottom: 1px dashed var(--line); }
+.group-row:last-of-type { border-bottom: 0; }
 .popover { position: fixed; z-index: 50; background: #fff; border: 1px solid var(--line-strong); border-radius: 10px; box-shadow: 0 10px 30px rgba(0,0,0,0.18); padding: 10px; width: 280px; max-height: 420px; overflow-y: auto; }
 .popover .opt { display: block; width: 100%; text-align: left; border: 0; background: transparent; padding: 7px 8px; border-radius: 6px; cursor: pointer; }
 .popover .opt:hover { background: #f1f4f8; }
@@ -222,6 +238,9 @@ input[type=color] { width: 36px; height: 32px; padding: 0; border: 1px solid var
 .pick-result { font-size: 34px; font-weight: 800; display: flex; flex-wrap: wrap; gap: 10px; }
 .pick-result span { background: var(--primary-soft); color: var(--primary-dark); padding: 6px 16px; border-radius: 10px; }
 .kbd { font-family: inherit; background: #eef1f5; border-radius: 4px; padding: 0 5px; font-size: 12px; }
+
+.roster-grid { grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); }
+table.list td input[type=text] { min-width: 90px; }
 
 @media (max-width: 1280px) {
   .t-body { grid-template-columns: 104px 1fr 280px; }

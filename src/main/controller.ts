@@ -2,7 +2,7 @@
 import type { AppData, ClassRoom, FullState, Notice, Runtime, Schedule, ScheduleLogEntry, SeatLayout, SeatingResult, StudentView, TimerDisplayMode } from '../shared/types';
 import { newClass } from '../shared/defaults';
 import { displayNames, isAway, mergeRoster, parseRosterText, MAX_STUDENTS } from '../shared/roster';
-import { cleanLayout, drawSeating, FIXED_ISSUE_TEXT, precheckSeating, reconcileAssignment, seatExists, seatLabel, setFixed, suggestLayout, validateFixed, disabledList } from '../shared/seating';
+import { activeSeats, cleanGroups, cleanLayout, cycleGender, disabledKey, disabledList, drawSeating, FIXED_ISSUE_TEXT, genderKey, genderPattern, type GenderPattern, precheckSeating, reconcileAssignment, seatExists, seatLabel, setFixed, suggestLayout, validateFixed } from '../shared/seating';
 import { eligibleStudents, pickStudents } from '../shared/picker';
 import { evaluateTick, findConflicts, validateSchedule } from '../shared/schedule';
 import { idleTimer, pauseTimer, remainingMs, resetTimer, resumeTimer, setTimerMode, startTimer, tickTimer } from '../shared/timer';
@@ -232,7 +232,8 @@ export class Controller {
         const name = String(a.name ?? '').trim();
         if (!name) return { ok: false, error: '이름을 입력해 주세요.' };
         const number = a.number ? Number(a.number) : null;
-        const r = mergeRoster(c.students, [{ number: number && number > 0 ? Math.round(number) : null, name }], 'append');
+        const gender = a.gender === 'M' || a.gender === 'F' ? a.gender : null;
+        const r = mergeRoster(c.students, [{ number: number && number > 0 ? Math.round(number) : null, name, gender }], 'append');
         if (r.added === 0) return { ok: false, error: r.errors[0] ?? '추가하지 못했습니다.' };
         c.students = r.students;
         return;
@@ -254,6 +255,7 @@ export class Controller {
         }
         if (a.absent !== undefined) s.absentDate = a.absent ? this.today : null;
         if (a.excluded !== undefined) s.excluded = !!a.excluded;
+        if (a.gender !== undefined) s.gender = a.gender === 'M' || a.gender === 'F' ? a.gender : null;
         return;
       }
       case 'student/delete': {
@@ -412,39 +414,68 @@ export class Controller {
 
       // ----- 자리 배치 -----
       case 'seating/setLayout': {
-        const l = cleanLayout({ ...c.seating.layout, ...(a.layout as Partial<SeatLayout>) });
+        const prevType = c.seating.layout.type;
+        const patch = { ...(a.layout as Partial<SeatLayout>) };
+        if (patch.groups) patch.groups = cleanGroups(patch.groups);
+        const l = cleanLayout({ ...c.seating.layout, ...patch });
         l.rows = clamp(Math.round(l.rows), 1, 10);
         l.pairCols = clamp(Math.round(l.pairCols), 1, 6);
         l.cols = clamp(Math.round(l.cols), 1, 12);
         l.pairsPerGroup = clamp(Math.round(l.pairsPerGroup), 1, 3);
         let note: string | undefined;
-        // 짝꿍형↔개인형 전환으로 자리가 모자라면 줄을 늘려 준다
-        if (a.layout?.type && a.layout.type !== c.seating.layout.type) {
+        // 형태를 바꿔 자리가 모자라면 줄을 늘려 준다
+        if (patch.type && patch.type !== prevType) {
           const n = precheckSeating({ layout: l, students: c.students, fixed: [], excludeAway: c.seating.excludeAway, today: this.today }).participants.length;
-          const perRow = l.type === 'pair' ? l.pairCols * 2 : l.cols;
-          const active = (layout: SeatLayout) => perRow * layout.rows - disabledList(layout).filter((id) => seatExists(layout, id)).length;
-          const before = l.rows;
-          while (active(l) < n && l.rows < 10) l.rows++;
-          if (l.rows !== before) note = `자리가 모자라 줄 수를 ${before}줄에서 ${l.rows}줄로 늘렸습니다.`;
+          const cap = () => activeSeats(cleanLayout(l)).length;
+          if (l.type === 'custom') {
+            const before = Math.max(...l.groups.map((g) => g.rows));
+            while (cap() < n && l.groups.some((g) => g.rows < 10)) l.groups = l.groups.map((g) => ({ ...g, rows: Math.min(10, g.rows + 1) }));
+            const after = Math.max(...l.groups.map((g) => g.rows));
+            if (after !== before) note = `자리가 모자라 분단 줄 수를 ${after}줄로 늘렸습니다.`;
+          } else {
+            const before = l.rows;
+            while (cap() < n && l.rows < 10) l.rows++;
+            if (l.rows !== before) note = `자리가 모자라 줄 수를 ${before}줄에서 ${l.rows}줄로 늘렸습니다.`;
+          }
         }
         c.seating.layout = cleanLayout(l);
         return { ok: true, issues: this.fixedIssueTexts(c), note };
       }
       case 'seating/suggest': {
-        const type = a.layoutType === 'single' ? 'single' : a.layoutType === 'pair' ? 'pair' : c.seating.layout.type;
-        const n = precheckSeating({ layout: c.seating.layout, students: c.students, fixed: [], excludeAway: false, today: this.today }).participants.length;
-        const s = suggestLayout(n, type, c.seating.layout);
-        c.seating.layout = { ...s, disabledPair: [], disabledSingle: [] };
+        const cur = c.seating.layout;
+        const n = precheckSeating({ layout: cur, students: c.students, fixed: [], excludeAway: false, today: this.today }).participants.length;
+        if (cur.type === 'custom') {
+          // 분단별 설정은 분단 인원은 그대로 두고 줄 수만 학생 수에 맞춤
+          const perRow = cur.groups.reduce((x, g) => x + g.size, 0);
+          const rows = clamp(Math.ceil(n / perRow), 1, 10);
+          c.seating.layout = cleanLayout({ ...cur, groups: cur.groups.map((g) => ({ ...g, rows })), disabledCustom: [] });
+        } else {
+          const sug = suggestLayout(n, cur.type, cur);
+          c.seating.layout = cleanLayout({ ...cur, pairCols: sug.pairCols, cols: sug.cols, rows: sug.rows, [disabledKey(cur.type)]: [] });
+        }
         return { ok: true, issues: this.fixedIssueTexts(c) };
       }
       case 'seating/toggleSeat': {
         const l = c.seating.layout;
-        const key = l.type === 'pair' ? 'disabledPair' : 'disabledSingle';
+        const key = disabledKey(l.type);
         const list = new Set(l[key]);
         if (list.has(a.seatId)) list.delete(a.seatId);
         else list.add(a.seatId);
         c.seating.layout = { ...l, [key]: [...list] };
         return { ok: true, issues: this.fixedIssueTexts(c) };
+      }
+      case 'seating/toggleGender': {
+        const l = c.seating.layout;
+        if (!seatExists(l, a.seatId)) return { ok: false, error: '없는 좌석입니다.' };
+        if (disabledList(l).includes(a.seatId)) return { ok: false, error: '사용하지 않는 자리입니다.' };
+        const key = genderKey(l.type);
+        c.seating.layout = { ...l, [key]: cycleGender(l[key], a.seatId) };
+        return;
+      }
+      case 'seating/genderPattern': {
+        const l = c.seating.layout;
+        c.seating.layout = { ...l, [genderKey(l.type)]: genderPattern(l, a.pattern as GenderPattern) };
+        return;
       }
       case 'seating/setFixed': {
         if (!seatExists(c.seating.layout, a.seatId)) return { ok: false, error: '없는 좌석입니다.' };
@@ -480,6 +511,7 @@ export class Controller {
           skippedFixedAway: r.skippedFixedAway.map((f) => names.get(f.studentId)),
           issues: r.issues.map((i) => `${names.get(i.studentId) ?? '(삭제된 학생)'} — ${seatLabel(i.seatId)}: ${FIXED_ISSUE_TEXT[i.reason]}`),
           emptySeats: r.emptySeats,
+          genderNotes: r.genderNotes,
         };
       }
       case 'seating/reveal': {

@@ -195,6 +195,50 @@ await check('짝꿍형 → 개인형 전환 시 자리 부족하면 줄 자동 �
   assert(fixedStill === 1, '형태 전환 후 고정 설정 사라짐');
 });
 
+await check('분단별 설정(1분단 2명·2분단 3명·3분단 2명) + 남녀 자리 지정 → 추첨', async () => {
+  // 성별 입력: 명단 화면에서 앞 12명 남, 나머지 여 (일부는 UI 버튼으로)
+  const ids = await app.evaluate(() => globalThis.__ct.ctl.cls.students.map((s) => s.id));
+  for (let i = 0; i < ids.length; i++) await dispatch(app, { type: 'student/update', id: ids[i], gender: i < 12 ? 'M' : 'F' });
+  await teacher.click('[data-tab=roster]');
+  await teacher.screenshot({ path: path.join(shots, '14-teacher-roster-gender.png') });
+  await teacher.click('[data-tab=seating]');
+  await teacher.click('[data-testid=layout-custom]');
+  await teacher.waitForSelector('[data-testid=group-editor]');
+  await teacher.click('[data-testid=group-0-size-2]');
+  await teacher.click('[data-testid=group-1-size-3]');
+  if ((await teacher.locator('[data-testid=group-row]').count()) < 3) await teacher.click('[data-testid=group-add]');
+  await teacher.click('[data-testid=group-2-size-2]');
+  await sleep(300);
+  const groups = await app.evaluate(() => globalThis.__ct.ctl.cls.seating.layout.groups.map((g) => g.size));
+  assert(JSON.stringify(groups) === '[2,3,2]', '분단 인원 ' + JSON.stringify(groups));
+  await teacher.click('[data-testid=mode-gender]');
+  await teacher.click('[data-testid=gender-pattern-pair-mf]');
+  await sleep(300);
+  const counts = await teacher.textContent('[data-testid=gender-counts]');
+  assert(counts.includes('남자 자리') && counts.includes('여자 자리'), counts);
+  await teacher.screenshot({ path: path.join(shots, '15-teacher-groups-gender.png') });
+  await teacher.click('[data-testid=seat-draw-reveal]');
+  await sleep(2800);
+  const res = await app.evaluate(() => {
+    const c = globalThis.__ct.ctl.cls;
+    const gm = c.seating.layout.genderCustom;
+    const fixedSeats = new Set(c.seating.fixed.map((f) => f.seatId));
+    const bad = Object.entries(c.seating.draft.assignment).filter(([seat, sid]) => gm[seat] && !fixedSeats.has(seat) && c.students.find((s) => s.id === sid).gender !== gm[seat]);
+    return { n: Object.keys(c.seating.draft.assignment).length, bad: bad.length, type: c.seating.layout.type };
+  });
+  assert(res.type === 'custom' && res.n === 23 && res.bad === 0, JSON.stringify(res));
+  const sw = await studentWin(app);
+  const visible = await sw.evaluate(() => document.body.innerText + ' ' + [...document.querySelectorAll('*')].map((e) => e.className).join(' '));
+  assert(!/남자|여자|g-m|g-f|gtag|🔒|고정/.test(visible), '학생 화면에 남녀 자리·고정 표시가 있음');
+  await sw.screenshot({ path: path.join(shots, '16-student-groups.png') });
+  // 다음 검사를 위해 원래대로
+  await teacher.click('[data-testid=gender-pattern-clear]');
+  await teacher.click('[data-testid=layout-pair]');
+  await teacher.click('[data-testid=mode-toggle]');
+  await dispatch(app, { type: 'seating/draw', reveal: false });
+  await dispatch(app, { type: 'seating/confirm' });
+});
+
 // 칠판에 긴 문구 공개
 const longText = '오늘의 활동 안내\n1. 모둠별로 자료를 읽고 중요한 내용을 세 가지로 정리합니다\n2. 정리한 내용을 바탕으로 발표 자료를 만듭니다\n3. 발표 순서를 정하고 역할을 나눕니다\n4. 다른 모둠의 발표를 듣고 질문을 하나씩 준비합니다\n5. 사용한 물건은 제자리에 정리합니다';
 await dispatch(app, { type: 'board/updateDraft', patch: { text: longText } });

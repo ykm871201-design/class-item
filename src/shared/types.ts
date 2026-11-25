@@ -1,6 +1,16 @@
 // 앱 전체에서 공유하는 데이터 타입 정의
 
-export type LayoutType = 'pair' | 'single';
+/** pair: 짝꿍형, single: 개인형, custom: 분단별 설정(분단마다 한 줄 인원·줄 수를 따로 정함) */
+export type LayoutType = 'pair' | 'single' | 'custom';
+
+/** 남(M) / 여(F) */
+export type Gender = 'M' | 'F';
+
+/** 분단별 설정의 한 분단: 한 줄에 붙어 앉는 인원(1~4)과 줄 수 */
+export interface DeskGroup {
+  size: number;
+  rows: number;
+}
 
 export interface Student {
   id: string; // 고유 ID (이름이 바뀌어도 유지)
@@ -8,6 +18,7 @@ export interface Student {
   name: string;
   absentDate?: string | null; // 'YYYY-MM-DD' — 이 날짜에만 결석 처리
   excluded?: boolean; // 일시 제외 (교사가 해제할 때까지)
+  gender?: Gender | null; // 성별 (남자·여자 자리 배치에 사용)
 }
 
 export interface SeatLayout {
@@ -20,6 +31,13 @@ export interface SeatLayout {
   /** 사용하지 않는 자리 ID 목록 (형태별로 따로 기억) */
   disabledPair: string[];
   disabledSingle: string[];
+  disabledCustom: string[];
+  /** 분단별 설정: 왼쪽 분단부터 */
+  groups: DeskGroup[];
+  /** 남자 자리·여자 자리 지정 (자리 ID → 성별). 형태별로 따로 기억. 교사에게만 보임 */
+  genderPair: Record<string, Gender>;
+  genderSingle: Record<string, Gender>;
+  genderCustom: Record<string, Gender>;
   /** 짝꿍형에서 몇 쌍마다 분단 간격을 둘지 (기본 1 = 짝마다 분단) */
   pairsPerGroup: number;
 }
@@ -250,8 +268,9 @@ export interface StudentSeatView {
 export interface StudentSeatingView {
   type: LayoutType;
   rows: number;
-  cols: number; // 실제 자리 열 수 (짝꿍형은 pairCols*2)
-  pairsPerGroup: number;
+  cols: number; // 실제 자리 열 수
+  /** 열 사이 간격 (gaps[c-1] = c번째 열 앞의 간격, 자리 너비 대비 비율) */
+  gaps: number[];
   seats: StudentSeatView[];
   revealId: string;
   animate: boolean;

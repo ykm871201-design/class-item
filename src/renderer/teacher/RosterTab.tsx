@@ -13,6 +13,7 @@ export function RosterTab() {
   const [bulk, setBulk] = useState('');
   const [num, setNum] = useState('');
   const [name, setName] = useState('');
+  const [gender, setGender] = useState<'' | 'M' | 'F'>('');
   const parsed = useMemo(() => parseRosterText(bulk), [bulk]);
   const dupNames = useMemo(() => {
     const m = new Map<string, number>();
@@ -79,7 +80,7 @@ export function RosterTab() {
         </div>
       </div>
 
-      <div className="grid2">
+      <div className="grid2 roster-grid">
         <div className="card">
           <h2>
             {cls.name} 학생 {cls.students.length}명 <span className="hint">최대 {MAX_STUDENTS}명</span>
@@ -95,17 +96,22 @@ export function RosterTab() {
               maxLength={20}
               onChange={(e) => setName(e.target.value)}
               onKeyDown={async (e) => {
-                if (e.key === 'Enter' && (await act('student/add', { number: num, name })).ok) {
+                if (e.key === 'Enter' && (await act('student/add', { number: num, name, gender: gender || null })).ok) {
                   setName('');
                   setNum('');
                 }
               }}
             />
+            <select value={gender} onChange={(e) => setGender(e.target.value as '' | 'M' | 'F')} title="성별">
+              <option value="">성별</option>
+              <option value="M">남</option>
+              <option value="F">여</option>
+            </select>
             <button
               className="btn primary"
               disabled={cls.students.length >= MAX_STUDENTS}
               onClick={async () => {
-                if ((await act('student/add', { number: num, name })).ok) {
+                if ((await act('student/add', { number: num, name, gender: gender || null })).ok) {
                   setName('');
                   setNum('');
                 }
@@ -120,11 +126,12 @@ export function RosterTab() {
           <table className="list" data-testid="student-table">
             <thead>
               <tr>
-                <th style={{ width: 70 }}>번호</th>
-                <th>이름</th>
-                <th style={{ width: 82 }}>오늘 결석</th>
-                <th style={{ width: 82 }}>일시 제외</th>
-                <th style={{ width: 60 }} />
+                <th style={{ width: 66 }}>번호</th>
+                <th style={{ minWidth: 120 }}>이름</th>
+                <th style={{ width: 92 }}>성별</th>
+                <th style={{ width: 48 }} title="오늘만 결석 (내일 자동 해제)">결석</th>
+                <th style={{ width: 48 }} title="해제할 때까지 제외">제외</th>
+                <th style={{ width: 56 }} />
               </tr>
             </thead>
             <tbody>
@@ -133,25 +140,25 @@ export function RosterTab() {
               ))}
               {cls.students.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="muted">
+                  <td colSpan={6} className="muted">
                     등록된 학생이 없습니다. 오른쪽에 명단을 붙여넣어 한 번에 등록하세요.
                   </td>
                 </tr>
               )}
             </tbody>
           </table>
-          <p className="small muted">‘오늘 결석’은 오늘만 적용되고 다음 날 자동으로 풀립니다. ‘일시 제외’는 직접 해제할 때까지 유지됩니다.</p>
+          <p className="small muted">‘결석’은 오늘만 적용되고 다음 날 자동으로 풀립니다. ‘제외’(일시 제외)는 직접 해제할 때까지 유지됩니다. 성별은 남자·여자 자리 배치에 쓰이며, 다시 누르면 지워집니다.</p>
         </div>
 
         <div className="card">
           <h2>명단 한 번에 등록</h2>
           <p className="small muted" style={{ marginTop: 0 }}>
-            엑셀에서 <b>번호·이름 두 열</b>을 복사해 붙여넣거나, 이름을 한 줄에 하나씩 입력하세요. 번호가 없으면 자동으로 매깁니다.
+            엑셀에서 <b>번호·이름(·성별) 열</b>을 복사해 붙여넣거나, 이름을 한 줄에 하나씩 입력하세요. 번호가 없으면 자동으로 매깁니다. 성별은 ‘남/여’로 적으면 함께 등록됩니다.
           </p>
-          <textarea rows={12} value={bulk} onChange={(e) => setBulk(e.target.value)} placeholder={'1\t김민준\n2\t이서연\n3\t박지호\n\n또는\n\n김민준\n이서연'} data-testid="bulk-input" />
+          <textarea rows={12} value={bulk} onChange={(e) => setBulk(e.target.value)} placeholder={'1\t김민준\t남\n2\t이서연\t여\n3\t박지호\t남\n\n또는\n\n김민준\n이서연'} data-testid="bulk-input" />
           {bulk.trim() && (
             <div className="small" style={{ margin: '6px 0' }}>
-              인식한 학생 {parsed.entries.length}명: {parsed.entries.slice(0, 12).map((e) => `${e.number ?? '?'}.${e.name}`).join(', ')}
+              인식한 학생 {parsed.entries.length}명: {parsed.entries.slice(0, 12).map((e) => `${e.number ?? '?'}.${e.name}${e.gender ? `(${e.gender === 'M' ? '남' : '여'})` : ''}`).join(', ')}
               {parsed.entries.length > 12 && ' …'}
               {parsed.skipped.length > 0 && <div style={{ color: 'var(--warn)' }}>해석하지 못한 줄 {parsed.skipped.length}개</div>}
             </div>
@@ -191,19 +198,22 @@ function StudentRow({ s, today, dup }: { s: Student; today: string; dup: boolean
       </td>
       <td>
         <input type="text" value={name} maxLength={20} onChange={(e) => setName(e.target.value)} onBlur={commitName} onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()} style={{ width: '100%' }} />
-        {dup && <span className="small muted">동명이인 → 화면에 ‘{s.name}({s.number})’</span>}
+        {dup && <div className="small muted">동명이인 → ‘{s.name}({s.number})’</div>}
       </td>
       <td>
-        <label className="inline">
-          <input type="checkbox" checked={absent} onChange={(e) => act('student/update', { id: s.id, absent: e.target.checked })} />
-          결석
-        </label>
+        <div className="seg gender-seg">
+          {(['M', 'F'] as const).map((g) => (
+            <button key={g} className={s.gender === g ? `on g-${g}` : ''} onClick={() => act('student/update', { id: s.id, gender: s.gender === g ? null : g })} title={s.gender === g ? '다시 누르면 성별 지우기' : ''}>
+              {g === 'M' ? '남' : '여'}
+            </button>
+          ))}
+        </div>
       </td>
       <td>
-        <label className="inline">
-          <input type="checkbox" checked={!!s.excluded} onChange={(e) => act('student/update', { id: s.id, excluded: e.target.checked })} />
-          제외
-        </label>
+        <input type="checkbox" checked={absent} title="오늘 결석" aria-label="오늘 결석" onChange={(e) => act('student/update', { id: s.id, absent: e.target.checked })} />
+      </td>
+      <td>
+        <input type="checkbox" checked={!!s.excluded} title="일시 제외" aria-label="일시 제외" onChange={(e) => act('student/update', { id: s.id, excluded: e.target.checked })} />
       </td>
       <td>
         <button

@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
-import type { ClassRoom, LayoutType, SeatLayout } from '../../shared/types';
-import { activeSeats, allSeats, disabledList, layoutEquals, precheckSeating, seatColumns, seatLabel, shortSeatLabel, validateFixed, FIXED_ISSUE_TEXT, LIMITS } from '../../shared/seating';
+import type { ClassRoom, DeskGroup, LayoutType, SeatLayout } from '../../shared/types';
+import { activeSeats, allSeats, columnGaps, disabledList, genderMap, groupOfColumn, layoutEquals, precheckSeating, seatColumns, seatLabel, shortSeatLabel, totalRows, validateFixed, FIXED_ISSUE_TEXT, GENDER_PATTERN_TEXT, GENDER_TEXT, LIMITS, type GenderPattern } from '../../shared/seating';
 import { awayLabel, displayNames } from '../../shared/roster';
 import { formatDateTimeKo, localDateKey } from '../../shared/util';
 import { seatGridTemplate } from '../common/StudentScreen';
 import { act, api, toast, useAppState } from './api';
 
-type ClickMode = 'fix' | 'toggle';
+type ClickMode = 'fix' | 'toggle' | 'gender';
 
 export function SeatingTab() {
   const { data, runtime, studentView } = useAppState();
@@ -55,11 +55,20 @@ export function SeatingTab() {
       const msgs: string[] = [];
       if (r.skippedFixedAway?.length) msgs.push(`결석·제외로 이번 배치에서 빠진 고정 학생: ${r.skippedFixedAway.join(', ')}`);
       if (r.emptySeats > 0) msgs.push(`빈자리 ${r.emptySeats}석`);
+      if (r.genderNotes?.length) msgs.push(...r.genderNotes);
       toast((reveal ? '추첨하여 학생 화면에 공개했습니다.' : '추첨했습니다. 교사 화면에서만 보입니다.') + (msgs.length ? '\n' + msgs.join('\n') : ''), 'ok', 5000);
     }
   };
 
   const onSeatClick = (seatId: string, e: React.MouseEvent) => {
+    if (mode === 'gender') {
+      if (disabledList(layout).includes(seatId)) {
+        toast('사용하지 않는 자리입니다. 먼저 ‘사용 / 사용 안 함’으로 다시 켜 주세요.', 'warn');
+        return;
+      }
+      act('seating/toggleGender', { seatId });
+      return;
+    }
     if (mode === 'toggle') {
       if (!disabledList(layout).includes(seatId) && fixedBySeat.has(seatId)) {
         toast('고정된 자리입니다. 먼저 고정을 해제한 뒤 사용하지 않는 자리로 바꾸세요.', 'warn');
@@ -72,21 +81,25 @@ export function SeatingTab() {
     setPop({ seatId, x: Math.min(window.innerWidth - 300, r.left), y: Math.min(window.innerHeight - 430, r.bottom + 4) });
   };
 
-  const grid = seatGridTemplate({ type: layout.type, cols: seatColumns(layout), pairsPerGroup: layout.pairsPerGroup });
+  const grid = seatGridTemplate(seatColumns(layout), columnGaps(layout));
   const dis = new Set(disabledList(layout));
+  const gmap = genderMap(layout);
+  const hasGender = Object.keys(gmap).length > 0;
+  const genderOf = new Map(cls.students.map((st) => [st.id, st.gender ?? null]));
+  const noGenderCount = pre.participants.filter((st) => !st.gender).length;
 
   return (
     <div>
       <h1 className="t-title">랜덤 자리 배치 — {cls.name}</h1>
-      <p className="t-sub">교사 화면의 고정 표시(🔒)는 학생 화면에 나타나지 않습니다. 학생 화면에서는 모든 자리가 똑같이 섞이고 동시에 공개됩니다.</p>
+      <p className="t-sub">교사 화면의 고정 표시(🔒)와 남자 자리·여자 자리 표시는 학생 화면에 나타나지 않습니다. 학생 화면에서는 모든 자리가 똑같이 섞이고 동시에 공개됩니다.</p>
 
       <div className="card">
         <h2>자리 모양</h2>
         <div className="row">
           <div className="seg">
-            {(['pair', 'single'] as LayoutType[]).map((t) => (
+            {(['pair', 'single', 'custom'] as LayoutType[]).map((t) => (
               <button key={t} className={layout.type === t ? 'on' : ''} onClick={() => setLayout({ type: t })} data-testid={`layout-${t}`}>
-                {t === 'pair' ? '짝꿍형 (2명씩)' : '개인형 (1명씩)'}
+                {t === 'pair' ? '짝꿍형 (2명씩)' : t === 'single' ? '개인형 (1명씩)' : '분단별 설정 (2명·3명 섞기)'}
               </button>
             ))}
           </div>
@@ -102,10 +115,14 @@ export function SeatingTab() {
                 </select>
               </label>
             </>
-          ) : (
+          ) : layout.type === 'single' ? (
             <Stepper label="한 줄의 자리 수" value={layout.cols} min={LIMITS.cols.min} max={LIMITS.cols.max} onChange={(v) => setLayout({ cols: v })} />
+          ) : null}
+          {layout.type === 'custom' ? (
+            <Stepper label="모든 분단 줄 수" value={totalRows(layout)} min={LIMITS.rows.min} max={LIMITS.rows.max} onChange={(v) => setLayout({ groups: layout.groups.map((g) => ({ ...g, rows: v })) })} />
+          ) : (
+            <Stepper label="줄 수" value={layout.rows} min={LIMITS.rows.min} max={LIMITS.rows.max} onChange={(v) => setLayout({ rows: v })} />
           )}
-          <Stepper label="줄 수" value={layout.rows} min={LIMITS.rows.min} max={LIMITS.rows.max} onChange={(v) => setLayout({ rows: v })} />
           <button
             className="btn"
             onClick={async () => {
@@ -116,6 +133,7 @@ export function SeatingTab() {
             학생 수에 맞게 자동 배열
           </button>
         </div>
+        {layout.type === 'custom' && <GroupEditor groups={layout.groups} onChange={(groups) => setLayout({ groups })} />}
         <div className="row small">
           <span>
             전체 {allSeats(layout).length}석 · 사용 {activeSeats(layout).length}석 · 참여 학생 <b data-testid="participants">{pre.participants.length}명</b>
@@ -133,6 +151,16 @@ export function SeatingTab() {
             </select>
           </label>
         </div>
+        {hasGender && pre.gender && (
+          <div className="row small" data-testid="gender-counts">
+            <span className="pill g-m">남자 자리 {pre.gender.seatsM}석 · 남학생 {pre.gender.studentsM}명</span>
+            <span className="pill g-f">여자 자리 {pre.gender.seatsF}석 · 여학생 {pre.gender.studentsF}명</span>
+            <span className="pill">지정 없는 자리 {pre.gender.seatsAny}석{pre.gender.studentsU ? ` · 성별 미입력 ${pre.gender.studentsU}명` : ''}</span>
+            <span className="muted">(고정 학생 제외)</span>
+          </div>
+        )}
+        {hasGender && !pre.error && pre.genderNotes.length > 0 && <div className="alert info">{pre.genderNotes.join('\n')}</div>}
+        {hasGender && noGenderCount > 0 && !pre.error && <div className="alert warn">성별을 입력하지 않은 학생 {noGenderCount}명은 남자·여자 자리가 아닌 ‘지정 없는 자리’에만 앉습니다. 학생 명단에서 성별을 입력할 수 있습니다.</div>}
         {pre.error && <div className="alert err">{pre.error}</div>}
         {issues.length > 0 && (
           <div className="alert warn">
@@ -155,6 +183,9 @@ export function SeatingTab() {
               <button className={mode === 'fix' ? 'on' : ''} onClick={() => setMode('fix')}>
                 🔒 학생 고정하기
               </button>
+              <button className={mode === 'gender' ? 'on' : ''} onClick={() => setMode('gender')} data-testid="mode-gender">
+                남자 / 여자 자리
+              </button>
               <button className={mode === 'toggle' ? 'on' : ''} onClick={() => setMode('toggle')} data-testid="mode-toggle">
                 사용 / 사용 안 함
               </button>
@@ -169,13 +200,26 @@ export function SeatingTab() {
             </button>
           </div>
         </div>
+        {mode === 'gender' && (
+          <div className="alert info" style={{ marginTop: 0 }}>
+            자리를 누를 때마다 <b>남자 자리 → 여자 자리 → 지정 없음</b> 순서로 바뀝니다. 추첨하면 남학생은 남자 자리, 여학생은 여자 자리에 무작위로 앉고, 지정 없는 자리에는 누구나 앉을 수 있습니다. 고정 자리는 남녀 지정보다 우선합니다.
+            <div className="row" style={{ marginTop: 8 }}>
+              <span className="field-label">한 번에 지정</span>
+              {(['pair-mf', 'pair-fm', 'checker', 'clear'] as GenderPattern[]).map((p) => (
+                <button key={p} className={`btn sm${p === 'clear' ? ' danger' : ''}`} onClick={() => act('seating/genderPattern', { pattern: p })} data-testid={`gender-pattern-${p}`}>
+                  {GENDER_PATTERN_TEXT[p]}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
         <div className="t-seat-wrap">
           <div className="t-front">
             <span className="side">◀ 왼쪽 (학생 기준)</span>
             <span>칠판 · 교실 앞</span>
             <span className="side">오른쪽 (학생 기준) ▶</span>
           </div>
-          <div className="t-seat-grid" style={{ gridTemplateColumns: grid.template, gridTemplateRows: `repeat(${layout.rows}, auto)` }} data-testid="teacher-seat-grid">
+          <div className="t-seat-grid" style={{ gridTemplateColumns: grid.template, gridTemplateRows: `repeat(${totalRows(layout)}, auto)` }} data-testid="teacher-seat-grid">
             {allSeats(layout).map((seat) => {
               const off = dis.has(seat.id);
               const fixedSid = fixedBySeat.get(seat.id);
@@ -183,16 +227,21 @@ export function SeatingTab() {
               const assigned = resultMatches ? result!.assignment[seat.id] : undefined;
               const fixedStu = fixedSid ? cls.students.find((s) => s.id === fixedSid) : undefined;
               const fixedAway = fixedStu ? awayLabel(fixedStu, today) : null;
+              const g = off ? undefined : gmap[seat.id];
               return (
                 <div
                   key={seat.id}
-                  className={`t-seat${off ? ' off' : ''}${fixedSid ? ' fixed' : ''}${bad ? ' bad' : ''}${pop?.seatId === seat.id ? ' picked' : ''}${!assigned && result ? ' empty-draft' : ''}`}
+                  className={`t-seat${off ? ' off' : ''}${g ? ` g-${g === 'M' ? 'm' : 'f'}` : ''}${fixedSid ? ' fixed' : ''}${bad ? ' bad' : ''}${pop?.seatId === seat.id ? ' picked' : ''}${!assigned && result ? ' empty-draft' : ''}`}
                   style={{ gridColumn: grid.seatTrack[seat.c] + 1, gridRow: seat.r + 1 }}
                   onClick={(e) => onSeatClick(seat.id, e)}
                   title={seatLabel(seat.id, layout)}
                   data-seat={seat.id}
                 >
-                  <span className="pos">{shortSeatLabel(seat.id)}</span>
+                  <span className="pos">
+                    {g && <span className="gtag">{GENDER_TEXT[g]}</span>}
+                    {layout.type === 'custom' ? `${groupOfColumn(layout, seat.c).group + 1}분단 ` : ''}
+                    {shortSeatLabel(seat.id)}
+                  </span>
                   {fixedSid && <span className="lock">🔒</span>}
                   {off ? <span>사용 안 함</span> : assigned ? <span>{names.get(assigned)}</span> : fixedSid ? null : <span className="muted small">{result && resultMatches ? '빈자리' : ''}</span>}
                   {fixedSid && (!assigned || assigned !== fixedSid) && (
@@ -209,6 +258,8 @@ export function SeatingTab() {
           <div className="legend">
             <span>일반 자리</span>
             <span className="l-fixed">고정 자리 (교사만 보임)</span>
+            <span className="l-m">남자 자리</span>
+            <span className="l-f">여자 자리</span>
             <span className="l-off">사용 안 함</span>
           </div>
           <span className="small muted">
@@ -351,6 +402,8 @@ function FixedList({ cls, names, today }: { cls: ClassRoom; names: Map<string, s
               const st = cls.students.find((s) => s.id === f.studentId);
               const issue = issues.find((i) => i.seatId === f.seatId && i.studentId === f.studentId);
               const away = st ? awayLabel(st, today) : null;
+              const seatG = genderMap(layout)[f.seatId];
+              const mismatch = seatG && st && st.gender !== seatG;
               return (
                 <tr key={f.seatId + f.studentId}>
                   <td>
@@ -360,6 +413,7 @@ function FixedList({ cls, names, today }: { cls: ClassRoom; names: Map<string, s
                   <td className="small">
                     {seatLabel(f.seatId, layout)}
                     {issue && <div style={{ color: 'var(--danger)' }}>{FIXED_ISSUE_TEXT[issue.reason]}</div>}
+                    {mismatch && <div className="muted">{GENDER_TEXT[seatG]}자 자리지만 고정이 우선합니다</div>}
                   </td>
                   <td style={{ width: 70 }}>
                     <button className="btn sm" onClick={() => act('seating/setFixed', { seatId: f.seatId, studentId: null })}>
@@ -445,5 +499,48 @@ function SeatPopover({ cls, seatId, x, y, names, today, onClose }: { cls: ClassR
         )}
       </div>
     </>
+  );
+}
+
+function GroupEditor({ groups, onChange }: { groups: DeskGroup[]; onChange: (g: DeskGroup[]) => void }) {
+  const total = groups.reduce((n, g) => n + g.size, 0);
+  const set = (i: number, p: Partial<DeskGroup>) => onChange(groups.map((g, j) => (j === i ? { ...g, ...p } : g)));
+  return (
+    <div className="group-editor" data-testid="group-editor">
+      <div className="small muted" style={{ marginBottom: 6 }}>
+        분단마다 한 줄에 몇 명이 붙어 앉는지와 줄 수를 정하세요. 왼쪽(학생 기준) 분단부터입니다. 같은 분단 안의 자리는 붙여서, 분단 사이는 띄워서 표시합니다.
+      </div>
+      {groups.map((g, i) => (
+        <div key={i} className="row group-row" data-testid="group-row">
+          <b style={{ width: 54 }}>{i + 1}분단</b>
+          <span className="field-label">한 줄에</span>
+          <div className="seg">
+            {[1, 2, 3, 4].map((n) => (
+              <button key={n} className={g.size === n ? 'on' : ''} disabled={n > g.size && total - g.size + n > LIMITS.totalCols} onClick={() => set(i, { size: n })} data-testid={`group-${i}-size-${n}`}>
+                {n}명
+              </button>
+            ))}
+          </div>
+          <Stepper label="줄 수" value={g.rows} min={LIMITS.rows.min} max={LIMITS.rows.max} onChange={(v) => set(i, { rows: v })} />
+          <span className="small muted">{g.size * g.rows}석</span>
+          <button className="btn sm danger" disabled={groups.length <= 1} onClick={() => onChange(groups.filter((_, j) => j !== i))}>
+            분단 삭제
+          </button>
+        </div>
+      ))}
+      <div className="row">
+        <button
+          className="btn sm"
+          disabled={groups.length >= LIMITS.groups.max || total + 2 > LIMITS.totalCols}
+          onClick={() => onChange([...groups, { size: 2, rows: groups[groups.length - 1]?.rows ?? 4 }])}
+          data-testid="group-add"
+        >
+          + 분단 추가
+        </button>
+        <span className="small muted">
+          분단 {groups.length}개 · 한 줄 최대 {total}명
+        </span>
+      </div>
+    </div>
   );
 }

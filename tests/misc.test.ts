@@ -10,10 +10,10 @@ import { makeStudents, TODAY } from './helpers';
 describe('명단 붙여넣기', () => {
   it('엑셀 번호/이름 (머리글 포함)', () => {
     const r = parseRosterText('번호\t이름\n1\t김민준\n2\t이서연\n\n3\t박지호\t남');
-    expect(r.entries).toEqual([{ number: 1, name: '김민준' }, { number: 2, name: '이서연' }, { number: 3, name: '박지호' }]);
+    expect(r.entries).toEqual([{ number: 1, name: '김민준', gender: null }, { number: 2, name: '이서연', gender: null }, { number: 3, name: '박지호', gender: 'M' }]);
   });
   it('이름만 줄바꿈 · 다양한 형식', () => {
-    expect(parseRosterText('김민준\n이서연').entries).toEqual([{ number: null, name: '김민준' }, { number: null, name: '이서연' }]);
+    expect(parseRosterText('김민준\n이서연').entries).toEqual([{ number: null, name: '김민준', gender: null }, { number: null, name: '이서연', gender: null }]);
     expect(parseRosterText('1. 김민준\n2번 이서연\n3,박지호\n4 최유나').entries.map((e) => [e.number, e.name])).toEqual([[1, '김민준'], [2, '이서연'], [3, '박지호'], [4, '최유나']]);
   });
   it('자동 번호·중복 번호·30명 제한', () => {

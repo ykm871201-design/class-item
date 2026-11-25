@@ -2,7 +2,7 @@
 // 고정 자리 여부, 학생 ID, 결석 정보, 교사용 설정은 절대 포함하지 않는다.
 import type { AppData, BoardStyle, ClassRoom, Runtime, SeatingResult, StudentBoardView, StudentSeatingView, StudentView } from './types';
 import { displayNames } from './roster';
-import { allSeats, seatColumns, disabledList } from './seating';
+import { allSeats, columnGaps, disabledList, seatColumns, totalRows } from './seating';
 
 export function boardView(b: BoardStyle): StudentBoardView {
   return { text: b.text, fontSize: b.fontSize, color: b.color, bg: b.bg, align: b.align, bold: b.bold, autoFit: b.autoFit };
@@ -20,9 +20,9 @@ export function seatingView(cls: ClassRoom, result: SeatingResult, reveal: { rev
   const shuffleNames = seats.filter((s) => s.name).map((s) => s.name as string).sort();
   return {
     type: layout.type,
-    rows: layout.rows,
+    rows: totalRows(layout),
     cols: seatColumns(layout),
-    pairsPerGroup: layout.pairsPerGroup,
+    gaps: columnGaps(layout),
     seats,
     revealId: reveal.revealId,
     animate: reveal.animate,
