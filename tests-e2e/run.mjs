@@ -56,6 +56,9 @@ async function setDisplays(app, withTv) {
     const list = withTv ? [primary, tv] : [primary];
     screen.getAllDisplays = () => list;
     screen.getPrimaryDisplay = () => primary;
+    // 실제 PC처럼 교사용 창은 주 모니터(왼쪽 1920px) 안에 둔다
+    const t = globalThis.__ct.teacherWin;
+    if (t && !t.isDestroyed()) t.setBounds({ x: 0, y: 0, width: 1440, height: 920 });
     screen.emit(withTv ? 'display-added' : 'display-removed', {}, withTv ? tv : tv);
   }, withTv);
   await sleep(400);
@@ -82,6 +85,23 @@ await check('단일 모니터 시작: 학생 창을 교사 화면에 띄우지 �
   assert(!info || !info.visible, '학생 창이 표시됨');
   const status = await teacher.textContent('[data-testid=student-status]');
   assert(status.includes('학생용 디스플레이 없음'), status);
+});
+
+await check('모니터 1대: 학생 화면(미리보기 창)에서 Esc → 숨김, 교사용 창으로', async () => {
+  await app.evaluate(() => globalThis.__ct.student.openPreview());
+  await sleep(600);
+  const sw = await until(() => studentWin(app), 5000, '학생 창 없음');
+  assert((await swInfo(app)).visible, '미리보기 창이 안 보임');
+  await teacher.waitForSelector('[data-testid=esc-hint]', { timeout: 3000 });
+  // 1) 실제 키보드 입력과 같은 경로 (Electron 입력 이벤트)
+  await app.evaluate(() => globalThis.__ct.student.win.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Escape' }));
+  await until(async () => !(await swInfo(app)).visible, 3000, 'Esc를 눌러도 숨겨지지 않음');
+  assert(await app.evaluate(() => globalThis.__ct.teacherWin.isVisible()), '교사용 창이 보이지 않음');
+  // 2) 화면 안 키 이벤트 경로
+  await app.evaluate(() => globalThis.__ct.student.openPreview());
+  await sleep(500);
+  await sw.keyboard.press('Escape');
+  await until(async () => !(await swInfo(app)).visible, 3000, '화면 안 Esc로 숨겨지지 않음');
 });
 
 await check('명단 붙여넣기 (동명이인 포함 23명)', async () => {
@@ -115,6 +135,14 @@ await check('학생 화면에 표시 → TV 디스플레이에 칠판 표시', a
   const t = await sw.textContent('[data-testid=board-text]');
   assert(t.includes('수학 익힘책'), t);
   await sw.screenshot({ path: path.join(shots, '01-student-board.png') });
+});
+
+await check('모니터 2대(학생 화면이 TV에 따로 있음): Esc를 눌러도 숨겨지지 않음', async () => {
+  const sw = await studentWin(app);
+  await app.evaluate(() => globalThis.__ct.student.win.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Escape' }));
+  await sw.keyboard.press('Escape');
+  await sleep(500);
+  assert((await swInfo(app)).visible, 'TV 쪽 학생 화면이 Esc로 숨겨짐');
 });
 
 await check('칠판 실시간 반영: 켜면 입력하는 즉시 학생 화면에 보임', async () => {

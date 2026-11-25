@@ -33,6 +33,15 @@ const startHidden = process.argv.includes('--hidden');
 
 const asset = (f: string) => path.join(__dirname, '..', 'assets', f);
 
+/** 창 가운데가 놓인 디스플레이 ID (연결된 디스플레이 목록 기준) */
+function displayOf(b: Electron.Rectangle): number {
+  const cx = b.x + b.width / 2;
+  const cy = b.y + b.height / 2;
+  const all = screen.getAllDisplays();
+  const hit = all.find((d) => cx >= d.bounds.x && cx < d.bounds.x + d.bounds.width && cy >= d.bounds.y && cy < d.bounds.y + d.bounds.height);
+  return (hit ?? screen.getPrimaryDisplay()).id;
+}
+
 /** 예약·학생 화면 진단 기록: %APPDATA%\ClassroomTools\schedule-log.txt */
 function diag(msg: string): void {
   try {
@@ -93,6 +102,11 @@ class StudentWindow {
     for (const ev of ['show', 'hide', 'minimize', 'restore', 'enter-full-screen', 'leave-full-screen'] as const) w.on(ev as any, () => ctl?.changed(false));
     w.loadFile(path.join(__dirname, 'renderer', 'student.html'));
     w.webContents.on('did-finish-load', () => w.webContents.send('student:view', ctl.studentView()));
+    // 모니터가 하나뿐이거나 교사용 창과 같은 모니터에 떠 있을 때: 학생 화면에서 Esc → 숨기고 교사용 창으로
+    w.webContents.on('before-input-event', (e, input) => {
+      if (input.type !== 'keyDown' || input.key !== 'Escape') return;
+      if (this.escape()) e.preventDefault();
+    });
     this.win = w;
     return w;
   }
@@ -208,6 +222,32 @@ class StudentWindow {
     }
   }
 
+  /** 학생 화면에서 Esc: 교사용 화면과 같은 모니터일 때만 숨기고 교사용 창으로 돌아감. 숨겼으면 true */
+  escape(): boolean {
+    if (!this.win || this.win.isDestroyed() || !this.win.isVisible()) return false;
+    if (!this.sharesTeacherScreen()) return false; // 학생용 TV에 따로 떠 있으면 실수로 꺼지지 않게 무시
+    diag('학생 화면에서 Esc → 학생 화면 숨김 (교사용 화면과 같은 모니터)');
+    ctl.dispatch({ type: 'student/hide' });
+    if (teacherWin && !teacherWin.isDestroyed()) {
+      if (teacherWin.isMinimized()) teacherWin.restore();
+      teacherWin.show();
+      teacherWin.focus();
+      ctl.rt.inTray = false;
+      ctl.changed(false);
+    }
+    return true;
+  }
+
+  /** 학생 창이 교사용 화면과 같은 모니터를 쓰는지 (모니터 1대, 미리보기 창, 주 모니터를 학생용으로 고른 경우) */
+  sharesTeacherScreen(): boolean {
+    const w = this.win;
+    if (!w || w.isDestroyed()) return false;
+    if (screen.getAllDisplays().length <= 1 || this.mode === 'preview') return true;
+    const studentDisp = displayOf(w.getBounds());
+    const teacherDisp = teacherWin && !teacherWin.isDestroyed() ? displayOf(teacherWin.getBounds()) : screen.getPrimaryDisplay().id;
+    return studentDisp === teacherDisp;
+  }
+
   status(): Runtime['studentWindow'] {
     const w = this.win && !this.win.isDestroyed() ? this.win : null;
     const d = this.resolve();
@@ -219,6 +259,7 @@ class StudentWindow {
       displayAvailable: !!d,
       displayLabel: d ? `${idx + 1}번 ${d.label || '디스플레이'} (${d.width}×${d.height})` : null,
       alwaysOnTop: !!w && w.isAlwaysOnTop(),
+      escHides: this.sharesTeacherScreen(),
     };
   }
 
@@ -420,6 +461,8 @@ app.on('window-all-closed', () => {
 function registerIpc(): void {
   ipcMain.handle('state:get', () => ctl.fullState());
   ipcMain.handle('student:getView', () => ctl.studentView());
+  // 학생 화면 안에서 받은 Esc (before-input-event로 처리되지 않은 경우의 보조 경로)
+  ipcMain.handle('student:escape', () => student.escape());
   ipcMain.handle('dispatch', (_e, action) => ctl.dispatch(action));
   ipcMain.handle('dialog:confirm', async (_e, { message, detail, ok, cancel }) => {
     const r = await dialog.showMessageBox(teacherWin!, { type: 'question', title: '교실 도구', message, detail, buttons: [ok ?? '확인', cancel ?? '취소'], defaultId: 0, cancelId: 1, noLink: true });

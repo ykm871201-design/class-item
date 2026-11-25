@@ -228,6 +228,8 @@ export interface StudentWindowStatus {
   displayAvailable: boolean;
   displayLabel: string | null;
   alwaysOnTop: boolean;
+  /** 학생 화면이 교사용 화면과 같은 모니터에 있어 Esc로 숨길 수 있는지 */
+  escHides?: boolean;
 }
 
 export interface Notice {

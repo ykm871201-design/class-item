@@ -85,6 +85,9 @@ export function SettingsTab() {
           </button>
           <span className="small muted">학생 화면을 교사용 모니터에 작은 별도 창으로 띄웁니다. 예약 타이머도 이 창에서 확인할 수 있습니다.</span>
         </div>
+        <div className="alert info">
+          모니터가 하나뿐이거나 학생 화면이 교사용 모니터에 떠 있을 때는, 학생 화면을 누른 상태에서 <b>Esc</b> 키를 누르면 학생 화면이 숨겨지고 교사용 창으로 돌아옵니다. (학생용 TV에 따로 떠 있을 때는 실수로 꺼지지 않도록 Esc가 동작하지 않습니다.)
+        </div>
       </div>
 
       <div className="card">

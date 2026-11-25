@@ -169,6 +169,11 @@ function SidePanel({ setTab }: { setTab: (t: Tab) => void }) {
         {!sw.visible && ' (학생 창 숨김)'}
         {sw.alwaysOnTop && ' · 맨 위 고정'}
       </div>
+      {sw.visible && sw.escHides && (
+        <div className="alert info" style={{ margin: 0 }} data-testid="esc-hint">
+          학생 화면이 이 모니터를 덮고 있으면, 학생 화면에서 <b>Esc</b> 키를 누르면 숨겨지고 이 창으로 돌아옵니다.
+        </div>
+      )}
       <div className="row">
         <button className="btn" onClick={() => act('student/base', { base: 'board', dismissTimer: true })}>
           칠판 보이기

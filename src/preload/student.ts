@@ -3,6 +3,7 @@ import { contextBridge, ipcRenderer } from 'electron';
 
 contextBridge.exposeInMainWorld('studentApi', {
   getView: () => ipcRenderer.invoke('student:getView'),
+  escape: () => ipcRenderer.invoke('student:escape'),
   onView: (cb: (v: unknown) => void) => {
     const h = (_e: unknown, v: unknown) => cb(v);
     ipcRenderer.on('student:view', h);
