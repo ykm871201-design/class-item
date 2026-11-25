@@ -109,6 +109,7 @@ await check('학생 화면에 표시 → TV 디스플레이에 칠판 표시', a
   const info = await until(() => swInfo(app), 5000, '학생 창 없음');
   assert(info.visible, '학생 창 숨김');
   assert(info.bounds.x >= 1920, '학생 창이 TV 디스플레이에 있지 않음: ' + JSON.stringify(info.bounds));
+  assert(info.top, '학생 화면이 다른 창보다 위에 있지 않음 (기본 설정: 항상 위)');
   const sw = await until(() => studentWin(app));
   await sw.waitForSelector('[data-testid=board-text]');
   const t = await sw.textContent('[data-testid=board-text]');
@@ -319,7 +320,7 @@ await check('같은 예약이 중복 실행되지 않음', async () => {
   assert(fired === 1, '실행 기록 ' + fired + '회');
 });
 
-await check('종료 화면 닫기 → 이전 칠판 전체 화면 복원, 맨 위 고정 해제', async () => {
+await check('종료 화면 닫기 → 이전 칠판 전체 화면 복원 (항상 위 설정이라 맨 위 유지)', async () => {
   await app.evaluate(() => { const t = globalThis.__ct.teacherWin; t.restore(); t.show(); globalThis.__ct.ctl.rt.inTray = false; });
   await teacher.click('[data-tab=timer]');
   await teacher.click('[data-testid=timer-close]');
@@ -327,7 +328,30 @@ await check('종료 화면 닫기 → 이전 칠판 전체 화면 복원, 맨 �
   await sw.waitForSelector('.st-root[data-timer=none] [data-testid=board-text]');
   const t = await sw.textContent('[data-testid=board-text]');
   assert(t.includes('발표 순서를 정하고'), '칠판 복원 안 됨');
-  assert(!(await swInfo(app)).top, '맨 위 고정이 해제되지 않음');
+  assert((await swInfo(app)).top, '항상 위 설정인데 맨 위가 풀림');
+});
+
+await check('학생 화면 숨기기 → 맨 위 해제·숨김, 다시 보이기 → 맨 위', async () => {
+  await teacher.click('text=학생 화면 숨기기');
+  await sleep(400);
+  let i = await swInfo(app);
+  assert(!i.visible && !i.top, '숨기기 후 상태: ' + JSON.stringify(i));
+  await teacher.click('text=학생 화면 보이기');
+  await sleep(400);
+  i = await swInfo(app);
+  assert(i.visible && i.top && i.bounds.x >= 1920, '다시 보이기 후 상태: ' + JSON.stringify(i));
+});
+
+await check('항상 위 설정을 끄면: 평소에는 일반 창, 타이머 표시 중에만 맨 위', async () => {
+  await app.evaluate(({}) => globalThis.__ct.ctl.data.settings.studentAlwaysOnTop = false);
+  await app.evaluate(() => globalThis.__ct.student.applyTopmost(false));
+  assert(!(await swInfo(app)).top, '설정을 꺼도 맨 위');
+  await dispatch(app, { type: 'timer/start', durationSec: 60, activity: '', sound: 'none', volume: 0, mode: 'split' });
+  assert((await swInfo(app)).top, '타이머 표시 중 맨 위가 아님');
+  await dispatch(app, { type: 'timer/close' });
+  assert(!(await swInfo(app)).top, '타이머 닫은 뒤 원래대로 돌아가지 않음');
+  await app.evaluate(({}) => globalThis.__ct.ctl.data.settings.studentAlwaysOnTop = true);
+  await app.evaluate(() => globalThis.__ct.student.applyTopmost(false));
 });
 
 await check('표시 방식 전환 시 남은 시간·일시정지 유지', async () => {

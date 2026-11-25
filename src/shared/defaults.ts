@@ -30,6 +30,7 @@ export function defaultSettings(): Settings {
   return {
     studentDisplay: null,
     studentFullscreen: true,
+    studentAlwaysOnTop: true,
     showStudentOnStartup: true,
     autoLaunch: false,
     closeToTrayNoticeShown: false,
@@ -224,6 +225,7 @@ export function normalizeData(raw: unknown): AppData {
     settings: {
       studentDisplay: sd && typeof sd.id === 'number' ? { id: sd.id, label: str(sd.label, ''), width: num(sd.width, 0), height: num(sd.height, 0), x: num(sd.x, 0), y: num(sd.y, 0) } : null,
       studentFullscreen: bool(s.studentFullscreen, ds.studentFullscreen),
+      studentAlwaysOnTop: bool(s.studentAlwaysOnTop, ds.studentAlwaysOnTop),
       showStudentOnStartup: bool(s.showStudentOnStartup, ds.showStudentOnStartup),
       autoLaunch: bool(s.autoLaunch, false),
       closeToTrayNoticeShown: bool(s.closeToTrayNoticeShown, false),

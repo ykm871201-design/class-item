@@ -69,6 +69,12 @@ export function SettingsTab() {
         </div>
         <div className="row">
           <label className="inline">
+            <input type="checkbox" checked={st.studentAlwaysOnTop} onChange={(e) => call({ type: 'setAlwaysOnTop', value: e.target.checked })} data-testid="always-on-top" />
+            학생 화면을 다른 창보다 항상 위에 표시 (‘학생 화면 숨기기’를 누르면 내려가서 다른 창이 보입니다)
+          </label>
+        </div>
+        <div className="row">
+          <label className="inline">
             <input type="checkbox" checked={st.showStudentOnStartup} onChange={(e) => act('settings/update', { patch: { showStudentOnStartup: e.target.checked } })} />
             앱을 시작하면 학생 화면 자동 표시 (학생용 디스플레이가 있을 때)
           </label>

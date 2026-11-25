@@ -146,6 +146,8 @@ export interface DisplayRef {
 export interface Settings {
   studentDisplay: DisplayRef | null; // 교사가 선택한 학생용 디스플레이
   studentFullscreen: boolean;
+  /** 학생 화면이 보이는 동안 다른 창보다 항상 위에 표시 */
+  studentAlwaysOnTop: boolean;
   showStudentOnStartup: boolean;
   autoLaunch: boolean;
   closeToTrayNoticeShown: boolean;

@@ -128,21 +128,30 @@ class StudentWindow {
     w.show();
   }
 
+  /** 숨기기: 맨 위 표시를 풀고 최소화한 뒤 숨겨서 다른 창이 다시 보이게 한다 */
   hide(): void {
     this.wanted = false;
-    if (this.win && !this.win.isDestroyed()) {
-      this.win.setAlwaysOnTop(false);
-      this.win.hide();
+    const w = this.win;
+    if (w && !w.isDestroyed()) {
+      w.setAlwaysOnTop(false);
+      if (w.isVisible() && !w.isMinimized()) w.minimize();
+      w.hide();
     }
     if (this.mode === 'preview') this.mode = 'none';
   }
 
-  applyTopmost(on: boolean): void {
-    this.topmost = on;
+  /**
+   * 맨 위 표시 결정.
+   * - 설정 '학생 화면을 다른 창보다 위에 표시'(기본 켜짐)가 켜져 있으면 학생 화면이 보이는 동안 항상 맨 위
+   * - 설정이 꺼져 있어도 타이머가 표시 중이면 맨 위 (타이머를 닫으면 원래대로)
+   * - 미리보기 창(교사용 모니터에서 시험)은 맨 위로 올리지 않는다
+   */
+  applyTopmost(timerOn: boolean): void {
+    this.topmost = timerOn;
     const w = this.win;
     if (!w || w.isDestroyed()) return;
-    // 타이머 표시 중에는 학생용 디스플레이에서 다른 창에 가려지지 않게 (미리보기 창은 제외)
-    if (on && this.mode === 'display' && w.isVisible()) {
+    const want = (timerOn || ctl.data.settings.studentAlwaysOnTop) && this.mode === 'display' && w.isVisible() && !w.isMinimized();
+    if (want) {
       w.setAlwaysOnTop(true, 'screen-saver');
       w.moveTop();
     } else w.setAlwaysOnTop(false);
@@ -393,6 +402,11 @@ function registerIpc(): void {
         ctl.changed(true);
         return { ok: true };
       }
+      case 'setAlwaysOnTop':
+        ctl.data.settings.studentAlwaysOnTop = !!a.value;
+        student.applyTopmost(student.topmost);
+        ctl.changed(true);
+        return { ok: true };
       case 'setFullscreen': {
         ctl.data.settings.studentFullscreen = !!a.value;
         const wasVisible = student.status().visible && student.mode === 'display';
