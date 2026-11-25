@@ -44,7 +44,7 @@ function App() {
       if (played.current.has(p.runId)) return;
       played.current.add(p.runId);
       (window.__soundPlays ||= []).push(p.runId);
-      playSound(p.sound as SoundId, p.volume);
+      playSound(p.sound as SoundId | 'tick' | 'tick-urgent', p.volume);
     });
     return () => {
       off1();
@@ -71,6 +71,7 @@ function App() {
                 <span className="ico">{t.ico}</span>
                 {t.label}
                 {t.id === 'schedule' && <UnreadBadge />}
+                {t.id === 'settings' && state.runtime.update.status === 'available' && <span className="badge" title="새 버전이 있습니다">새 버전</span>}
               </button>
             ))}
           </nav>

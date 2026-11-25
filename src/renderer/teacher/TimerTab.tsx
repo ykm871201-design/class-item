@@ -3,6 +3,7 @@ import type { SoundId, StudentBoardView, StudentView, TimerDisplayMode } from '.
 import { ScaledStudentScreen } from '../common/StudentScreen';
 import { SOUNDS } from '../../shared/defaults';
 import { formatClock } from '../../shared/util';
+import { WARN_FROM_CHOICES, warnFromLabel } from '../../shared/timer';
 import { useNow } from '../common/hooks';
 import { act, useAppState } from './api';
 import { playSound } from './sound';
@@ -27,6 +28,34 @@ export function SoundPicker({ sound, volume, onChange }: { sound: SoundId; volum
       <input type="range" min={0} max={100} value={volume} disabled={sound === 'none'} onChange={(e) => onChange(sound, Number(e.target.value))} />
       <span className="small muted" style={{ width: 40 }}>
         {sound === 'none' ? '무음' : `${volume}%`}
+      </span>
+    </div>
+  );
+}
+
+/** 종료 예고음: 끝나기 몇 초 전부터 종료 때까지 1초마다 째깍 소리 (마지막 10초는 높은 소리) */
+export function WarningPicker({ warnFrom, volume, durationSec, onChange }: { warnFrom: number; volume: number; durationSec: number; onChange: (sec: number) => void }) {
+  const preview = () => {
+    for (let i = 0; i < 3; i++) window.setTimeout(() => playSound('tick', volume), i * 1000);
+    for (let i = 0; i < 3; i++) window.setTimeout(() => playSound('tick-urgent', volume), 3000 + i * 1000);
+  };
+  return (
+    <div className="row" data-testid="warning-picker">
+      <span className="field-label">종료 예고음</span>
+      <div className="seg">
+        {WARN_FROM_CHOICES.map((c) => (
+          <button key={c.sec} type="button" className={warnFrom === c.sec ? 'on' : ''} onClick={() => onChange(c.sec)} aria-pressed={warnFrom === c.sec} data-warn={c.sec}>
+            {c.label}
+          </button>
+        ))}
+      </div>
+      <button type="button" className="btn sm" disabled={volume === 0} onClick={preview}>
+        ▶ 예고음 미리 듣기
+      </button>
+      <span className="small muted">
+        {warnFrom
+          ? `끝나기 ${warnFromLabel(warnFrom).replace('부터', '')}부터 끝날 때까지 1초마다 째깍 소리가 나고, 마지막 10초는 높은 소리로 바뀝니다.${durationSec > 0 && durationSec <= warnFrom ? ' (타이머가 더 짧아 처음부터 울립니다)' : ''}`
+          : '종료 알림음만 울립니다.'}
       </span>
     </div>
   );
@@ -93,7 +122,7 @@ export function TimerTab() {
   const setDefaults = (patch: Record<string, unknown>) => act('timer/defaults', { patch });
   const start = () => {
     if (total <= 0) return;
-    act('timer/start', { durationSec: total, activity, sound: st.timerSound, volume: st.timerVolume, mode: st.timerDisplayMode });
+    act('timer/start', { durationSec: total, activity, sound: st.timerSound, volume: st.timerVolume, mode: st.timerDisplayMode, warnFrom: st.timerWarnFrom });
   };
   const quick = (m: number) => {
     setMin(m);
@@ -113,6 +142,7 @@ export function TimerTab() {
             {{ idle: '대기', running: '진행 중', paused: '일시정지', finished: '종료' }[t.status]}
           </span>
           {schedName && <span className="pill">예약: {schedName}</span>}
+          {active && t.warnFrom > 0 && <span className="pill">예고음: {warnFromLabel(t.warnFrom)}</span>}
           {active && !t.shown && <span className="pill">학생 화면에서 숨김</span>}
         </h2>
         <div className="row" style={{ alignItems: 'flex-end' }}>
@@ -182,6 +212,7 @@ export function TimerTab() {
           </button>
         </div>
         <SoundPicker sound={st.timerSound} volume={st.timerVolume} onChange={(s, v) => setDefaults({ timerSound: s, timerVolume: v })} />
+        <WarningPicker warnFrom={st.timerWarnFrom} volume={st.timerVolume} durationSec={total} onChange={(sec) => setDefaults({ timerWarnFrom: sec })} />
         <div className="field-label" style={{ marginTop: 14 }}>
           표시 방식 <span className="small muted" style={{ fontWeight: 400 }}>— 눌러서 고르세요. 지금 학생 화면에 표시된 칠판 내용으로 미리 보여 줍니다.</span>
         </div>

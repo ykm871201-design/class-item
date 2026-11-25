@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { Store } from './store';
 import { Controller, type Ports } from './controller';
+import { Updater } from './updater';
 import { resolveStudentDisplay, type DisplayInfo } from '../shared/displays';
 import { validateImport } from '../shared/defaults';
 import type { DisplayRef, Runtime } from '../shared/types';
@@ -26,6 +27,7 @@ if (!app.requestSingleInstanceLock()) {
 
 let store: Store;
 let ctl: Controller;
+let updater: Updater;
 let teacherWin: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let quitting = false;
@@ -440,10 +442,17 @@ function init(): void {
   });
   powerMonitor.on('unlock-screen', () => ctl.checkSchedules());
 
+  // 업데이트: 시작 15초 뒤 조용히 한 번 확인 (인터넷이 없으면 아무 일도 없음)
+  updater = new Updater(ctl, diag, () => {
+    diag('업데이트 설치를 위해 앱 종료');
+    quitApp();
+  });
+  if (!isE2E || process.env.CT_UPDATE_API) setTimeout(() => updater.check(true), isE2E ? 500 : 15_000);
+
   if (ctl.data.settings.showStudentOnStartup && student.resolve()) student.show(true);
   ctl.changed(false);
 
-  if (isE2E) (globalThis as any).__ct = { ctl, student, get teacherWin() { return teacherWin; }, soundLog, store };
+  if (isE2E) (globalThis as any).__ct = { ctl, student, get teacherWin() { return teacherWin; }, soundLog, store, updater };
 }
 
 const soundLog: { runId: string; sound: string; volume: number; at: number }[] = [];
@@ -519,6 +528,11 @@ function registerIpc(): void {
         shell.openPath(f);
         return { ok: true };
       }
+      case 'updateCheck':
+        await updater.check(false);
+        return { ok: true };
+      case 'updateInstall':
+        return updater.install();
       case 'openDataFolder':
         shell.openPath(app.getPath('userData'));
         return { ok: true };

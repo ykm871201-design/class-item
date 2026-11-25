@@ -1,11 +1,12 @@
 import { useState } from 'react';
 import type { Schedule } from '../../shared/types';
 import { describeRepeat, nextRun } from '../../shared/schedule';
+import { warnFromLabel } from '../../shared/timer';
 import { SOUNDS } from '../../shared/defaults';
 import { WEEKDAY_KO, formatClock, formatDateTimeKo, localDateKey, pad2 } from '../../shared/util';
 import { act, api, toast, useAppState } from './api';
 import { useNow } from '../common/hooks';
-import { ACTIVITY_SUGGESTIONS, ModePreviewPicker, SoundPicker } from './TimerTab';
+import { ACTIVITY_SUGGESTIONS, ModePreviewPicker, SoundPicker, WarningPicker } from './TimerTab';
 
 const DAY_ORDER = [1, 2, 3, 4, 5, 6, 0];
 
@@ -24,6 +25,7 @@ function blank(now: number): Schedule {
     sound: 'chime',
     volume: 70,
     displayMode: 'split',
+    warnFrom: 0,
     createdAt: now,
   };
 }
@@ -95,6 +97,7 @@ export function ScheduleTab() {
                 <div className="small muted">
                   {describeRepeat(s)} · 알림음 {SOUNDS.find((x) => x.id === s.sound)?.name}
                   {s.sound !== 'none' && ` ${s.volume}%`}
+                  {s.warnFrom ? ` · 예고음 ${warnFromLabel(s.warnFrom)}` : ''}
                 </div>
                 <div className="small" style={{ marginTop: 2 }} data-testid="schedule-next">
                   {s.enabled ? (next ? <b style={{ color: 'var(--ok)' }}>다음 실행: {formatDateTimeKo(next)}</b> : <span className="muted">다음 실행 없음 (완료)</span>) : <span className="muted">꺼짐</span>}
@@ -235,6 +238,7 @@ function Editor({ s, setS, err, onSave, onCancel }: { s: Schedule; setS: (s: Sch
       </div>
       <ModePreviewPicker mode={s.displayMode} onChange={(m) => set({ displayMode: m })} board={board} durationSec={s.durationSec} activity={s.activity} />
       <SoundPicker sound={s.sound} volume={s.volume} onChange={(sound, volume) => set({ sound, volume })} />
+      <WarningPicker warnFrom={s.warnFrom ?? 0} volume={s.volume} durationSec={s.durationSec} onChange={(warnFrom) => set({ warnFrom })} />
       {err && <div className="alert err">{err}</div>}
       <div className="row" style={{ marginTop: 12 }}>
         <button className="btn big primary" onClick={onSave} data-testid="sch-save">

@@ -135,7 +135,63 @@ export function SettingsTab() {
         </div>
         <p className="small muted">가져오기를 하면 현재 데이터를 덮어쓰기 전에 확인을 묻고, 기존 데이터는 저장 폴더에 백업 파일로 남깁니다.</p>
       </div>
+      <UpdateCard />
       <p className="small muted">교실 도구 v{runtime.appVersion}</p>
+    </div>
+  );
+}
+
+function UpdateCard() {
+  const { runtime } = useAppState();
+  const u = runtime.update;
+  const pct = Math.round((u.progress ?? 0) * 100);
+  const busy = u.status === 'checking' || u.status === 'downloading' || u.status === 'installing';
+  const install = async () => {
+    const ok = await api().confirm({
+      message: `새 버전 v${u.latest}으로 업데이트할까요?`,
+      detail: '설치 파일을 내려받아 설치합니다. 설치하는 동안 앱이 잠시 꺼졌다가 다시 켜집니다. 진행 중인 타이머는 멈춥니다.\n학급·명단·예약 등 데이터는 그대로 유지됩니다.',
+      ok: '업데이트',
+    });
+    if (!ok) return;
+    const r = await api().app({ type: 'updateInstall' });
+    if (!r.ok && r.error) toast(r.error, 'err');
+  };
+  return (
+    <div className="card" data-testid="update-card">
+      <h2>
+        업데이트 <span className="hint">현재 버전 v{u.current}</span>
+      </h2>
+      <div className="row">
+        <button className="btn" onClick={() => api().app({ type: 'updateCheck' })} disabled={busy} data-testid="update-check">
+          {u.status === 'checking' ? '확인 중…' : '업데이트 확인'}
+        </button>
+        {u.status === 'latest' && <span className="pill" data-testid="update-status">최신 버전입니다 (v{u.latest})</span>}
+        {u.status === 'available' && (
+          <>
+            <span className="pill g-m" data-testid="update-status">새 버전 v{u.latest} 있음</span>
+            <button className="btn primary big" onClick={install} data-testid="update-install">
+              업데이트 설치
+            </button>
+          </>
+        )}
+        {u.status === 'downloading' && <span data-testid="update-status">내려받는 중… {pct}%</span>}
+        {u.status === 'installing' && <span data-testid="update-status">설치 중입니다. 잠시 후 앱이 다시 켜집니다…</span>}
+      </div>
+      {u.status === 'downloading' && (
+        <div className="progress" style={{ marginTop: 8 }}>
+          <div className="progress-fill" style={{ width: `${pct}%` }} />
+        </div>
+      )}
+      {u.error && <div className="alert err">{u.error}</div>}
+      {u.status === 'available' && u.notes && (
+        <details style={{ marginTop: 8 }}>
+          <summary className="small">바뀐 내용 보기</summary>
+          <div className="small" style={{ whiteSpace: 'pre-wrap', marginTop: 6 }}>{u.notes}</div>
+        </details>
+      )}
+      <p className="small muted" style={{ marginBottom: 0 }}>
+        GitHub에 올라온 최신 버전을 확인합니다 (인터넷 필요). 앱을 켤 때도 한 번 확인해서, 새 버전이 있으면 왼쪽 ‘설정’에 표시합니다. 업데이트해도 데이터는 그대로입니다.
+      </p>
     </div>
   );
 }

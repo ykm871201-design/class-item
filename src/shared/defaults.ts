@@ -2,6 +2,7 @@
 import type { AppData, BoardStyle, ClassRoom, PickerConfig, Schedule, SeatingConfig, SeatLayout, Settings, SoundId, Student } from './types';
 import { cleanGroups, cleanLayout, suggestLayout, LIMITS } from './seating';
 import { clamp, newId } from './util';
+import { normalizeWarnFrom } from './timer';
 
 export const BOARD_THEMES: { name: string; color: string; bg: string }[] = [
   { name: '흰 바탕 · 검은 글씨', color: '#1f2328', bg: '#ffffff' },
@@ -38,6 +39,7 @@ export function defaultSettings(): Settings {
     timerSound: 'chime',
     timerVolume: 70,
     timerDisplayMode: 'split',
+    timerWarnFrom: 0,
     timerActivity: '',
     lastTimerSec: 300,
   };
@@ -205,6 +207,7 @@ function normSchedule(v: unknown): Schedule | null {
     sound: sound(v.sound, 'chime'),
     volume: clamp(num(v.volume, 70), 0, 100),
     displayMode: v.displayMode === 'full' ? 'full' : 'split',
+    warnFrom: normalizeWarnFrom(v.warnFrom),
     createdAt: num(v.createdAt, Date.now()),
     activeSince: num(v.activeSince, num(v.createdAt, 0)),
   };
@@ -243,6 +246,7 @@ export function normalizeData(raw: unknown): AppData {
       timerSound: sound(s.timerSound, ds.timerSound),
       timerVolume: clamp(num(s.timerVolume, ds.timerVolume), 0, 100),
       timerDisplayMode: s.timerDisplayMode === 'full' ? 'full' : 'split',
+      timerWarnFrom: normalizeWarnFrom(s.timerWarnFrom),
       timerActivity: str(s.timerActivity, ''),
       lastTimerSec: clamp(num(s.lastTimerSec, 300), 1, 180 * 60),
     },

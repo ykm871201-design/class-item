@@ -5,7 +5,7 @@ import { displayNames, isAway, mergeRoster, parseRosterText, MAX_STUDENTS } from
 import { activeSeats, cleanGroups, cleanLayout, cycleGender, disabledKey, disabledList, drawSeating, FIXED_ISSUE_TEXT, genderKey, genderPattern, type GenderPattern, precheckSeating, reconcileAssignment, seatExists, seatLabel, setFixed, suggestLayout, validateFixed } from '../shared/seating';
 import { eligibleStudents, pickStudents } from '../shared/picker';
 import { evaluateTick, findConflicts, validateSchedule } from '../shared/schedule';
-import { idleTimer, pauseTimer, remainingMs, resetTimer, resumeTimer, setTimerMode, startTimer, tickTimer } from '../shared/timer';
+import { idleTimer, normalizeWarnFrom, pauseTimer, pendingAlerts, remainingMs, resetTimer, resumeTimer, setTimerMode, startTimer, tickTimer } from '../shared/timer';
 import { buildStudentView } from '../shared/studentView';
 import { clamp, formatClock, formatDateTimeKo, localDateKey, newId } from '../shared/util';
 
@@ -34,7 +34,8 @@ export class Controller {
   constructor(data: AppData, private ports: Ports, extra: { userDataPath: string; appVersion: string }) {
     this.data = data;
     this.rt = {
-      timer: idleTimer({ durationMs: data.settings.lastTimerSec * 1000, activity: data.settings.timerActivity, sound: data.settings.timerSound, volume: data.settings.timerVolume, mode: data.settings.timerDisplayMode }),
+      timer: idleTimer({ durationMs: data.settings.lastTimerSec * 1000, activity: data.settings.timerActivity, sound: data.settings.timerSound, volume: data.settings.timerVolume, mode: data.settings.timerDisplayMode, warnFrom: data.settings.timerWarnFrom }),
+      update: { status: 'idle', current: extra.appVersion },
       seatingReveal: null,
       pickerReveal: null,
       notices: [],
@@ -101,6 +102,13 @@ export class Controller {
 
   tick(): void {
     const now = this.now();
+    // 종료 예고음: 정한 시점부터 끝날 때까지 1초마다
+    const al = pendingAlerts(this.rt.timer, now);
+    if (al.play.length) {
+      const t = this.rt.timer;
+      this.rt.timer = { ...t, alerted: [...t.alerted.slice(-400), ...al.play.map((x) => x.key)] };
+      if (t.volume > 0) for (const x of al.play) this.ports.playSound({ runId: `${t.runId}-${x.key}`, sound: x.kind, volume: t.volume });
+    }
     // 타이머 종료 감지
     const r = tickTimer(this.rt.timer, now);
     if (r.justFinished) {
@@ -142,7 +150,7 @@ export class Controller {
       const what = prev.source === 'schedule' ? `예약 타이머 ‘${this.data.schedules.find((x) => x.id === prev.scheduleId)?.name ?? ''}’` : '수동 타이머';
       this.log('replaced', `${what}${prev.activity ? `(${prev.activity})` : ''} — 남은 ${formatClock(remainingMs(prev, now))}을 중단하고 ‘${s.name}’ 예약 타이머로 전환했습니다.`, { scheduleId: s.id, occurrence: key, acknowledged: false });
     }
-    this.rt.timer = startTimer({ durationMs: s.durationSec * 1000, activity: s.activity, sound: s.sound, volume: s.volume, mode: s.displayMode, source: 'schedule', scheduleId: s.id }, now);
+    this.rt.timer = startTimer({ durationMs: s.durationSec * 1000, activity: s.activity, sound: s.sound, volume: s.volume, mode: s.displayMode, source: 'schedule', scheduleId: s.id, warnFrom: s.warnFrom ?? 0 }, now);
     const shown = this.showTimerOnStudent('schedule');
     this.log('fired', `‘${s.name}’ 예약 타이머(${formatClock(s.durationSec * 1000)})를 시작했습니다.`, { scheduleId: s.id, occurrence: key });
     if (!shown) {
@@ -330,8 +338,9 @@ export class Controller {
         const sec = clamp(Math.round(Number(a.durationSec)), 1, 180 * 60);
         if (!Number.isFinite(sec)) return { ok: false, error: '시간을 확인해 주세요.' };
         const mode: TimerDisplayMode = a.mode === 'full' ? 'full' : 'split';
-        this.rt.timer = startTimer({ durationMs: sec * 1000, activity: String(a.activity ?? '').slice(0, 30), sound: a.sound ?? 'chime', volume: clamp(Number(a.volume ?? 70), 0, 100), mode, source: 'manual' }, now);
-        Object.assign(this.data.settings, { lastTimerSec: sec, timerActivity: this.rt.timer.activity, timerSound: this.rt.timer.sound, timerVolume: this.rt.timer.volume, timerDisplayMode: mode });
+        const warnFrom = normalizeWarnFrom(a.warnFrom ?? this.data.settings.timerWarnFrom);
+        this.rt.timer = startTimer({ durationMs: sec * 1000, activity: String(a.activity ?? '').slice(0, 30), sound: a.sound ?? 'chime', volume: clamp(Number(a.volume ?? 70), 0, 100), mode, source: 'manual', warnFrom }, now);
+        Object.assign(this.data.settings, { lastTimerSec: sec, timerActivity: this.rt.timer.activity, timerSound: this.rt.timer.sound, timerVolume: this.rt.timer.volume, timerDisplayMode: mode, timerWarnFrom: warnFrom });
         if (!this.showTimerOnStudent('timer')) this.notice('warn', '학생용 디스플레이가 없어 타이머는 교사용 화면에서만 진행됩니다.');
         return;
       }
@@ -363,6 +372,7 @@ export class Controller {
         return;
       case 'timer/defaults':
         Object.assign(this.data.settings, pick(a.patch ?? {}, ['timerSound', 'timerVolume', 'timerActivity', 'lastTimerSec', 'timerDisplayMode']));
+        if (a.patch?.timerWarnFrom !== undefined) this.data.settings.timerWarnFrom = normalizeWarnFrom(a.patch.timerWarnFrom);
         return;
 
       // ----- 예약 -----
@@ -371,6 +381,7 @@ export class Controller {
         const existing = this.data.schedules.find((x) => x.id === s.id);
         const sched: Schedule = { ...s, id: existing ? s.id : newId('sch_'), createdAt: existing?.createdAt ?? now, activeSince: now };
         sched.days = [...new Set(sched.days)].sort();
+        sched.warnFrom = normalizeWarnFrom(sched.warnFrom);
         const errors = validateSchedule(sched, now);
         if (errors.length) return { ok: false, error: errors.join('\n') };
         const conflicts = findConflicts(sched, this.data.schedules);

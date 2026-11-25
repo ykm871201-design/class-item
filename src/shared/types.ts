@@ -135,6 +135,8 @@ export interface Schedule {
   sound: SoundId;
   volume: number; // 0~100
   displayMode: TimerDisplayMode;
+  /** 종료 예고음: 끝나기 몇 초 전부터 종료 때까지 1초마다 울릴지 (0 = 없음) */
+  warnFrom?: number;
   createdAt: number;
   /** 이 시각 이전의 발생은 실행·놓침 판정에서 제외 (생성·수정·재활성화 시각) */
   activeSince?: number;
@@ -174,6 +176,7 @@ export interface Settings {
   timerSound: SoundId;
   timerVolume: number;
   timerDisplayMode: TimerDisplayMode;
+  timerWarnFrom: number;
   timerActivity: string;
   lastTimerSec: number;
 }
@@ -211,6 +214,8 @@ export interface TimerState {
   source: 'manual' | 'schedule';
   scheduleId?: string;
   shown: boolean; // 학생 화면에 타이머 표시 중인지
+  warnFrom: number; // 끝나기 몇 초 전부터 예고음 (0 = 없음)
+  alerted: string[]; // 이미 울린 예고음 (같은 초에 두 번 울리지 않게)
   finishedAt?: number;
   runId: string; // 타이머 실행마다 새로 발급 (알림음 1회 재생 보장)
 }
@@ -239,8 +244,22 @@ export interface Notice {
   message: string;
 }
 
+export type UpdateStatus = 'idle' | 'checking' | 'latest' | 'available' | 'downloading' | 'installing' | 'error';
+
+export interface UpdateState {
+  status: UpdateStatus;
+  current: string;
+  latest?: string;
+  publishedAt?: string;
+  notes?: string;
+  progress?: number; // 0~1
+  error?: string;
+  checkedAt?: number;
+}
+
 export interface Runtime {
   timer: TimerState;
+  update: UpdateState;
   seatingReveal: (RevealState & { classId: string; result: SeatingResult }) | null;
   pickerReveal: (RevealState & { names: string[]; poolNames: string[] }) | null;
   studentWindow: StudentWindowStatus;

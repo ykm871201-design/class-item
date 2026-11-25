@@ -22,7 +22,9 @@ function tone(c: AudioContext, out: AudioNode, freq: number, start: number, dur:
 }
 
 /** 한 번 재생. 반환값: 재생 길이(초) */
-export function playSound(id: SoundId, volume: number): number {
+export type AnySound = SoundId | 'tick' | 'tick-urgent';
+
+export function playSound(id: AnySound, volume: number): number {
   if (id === 'none' || volume <= 0) return 0;
   const c = ac();
   const master = c.createGain();
@@ -50,6 +52,17 @@ export function playSound(id: SoundId, volume: number): number {
       const seq = [523.25, 659.25, 783.99, 1046.5, 783.99, 1046.5];
       seq.forEach((f, i) => tone(c, master, f, t + i * 0.16, 0.5, 'triangle', 0.45));
       return 1.5;
+    }
+    case 'tick': {
+      // 종료 예고음: 1초마다 부드러운 째깍
+      tone(c, master, 880, t, 0.09, 'triangle', 0.28);
+      return 0.1;
+    }
+    case 'tick-urgent': {
+      // 마지막 10초: 더 높고 또렷한 삑
+      tone(c, master, 1318.5, t, 0.16, 'square', 0.16);
+      tone(c, master, 1318.5, t, 0.16, 'sine', 0.3);
+      return 0.2;
     }
     case 'beep': {
       for (let k = 0; k < 3; k++) tone(c, master, 880, t + k * 0.32, 0.2, 'square', 0.18);

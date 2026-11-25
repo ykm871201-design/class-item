@@ -40,8 +40,25 @@ async function until(fn, ms = 5000, msg = 'timeout') {
   }
 }
 
+// 업데이트 검사용 가짜 릴리스 서버 (실제 GitHub 대신)
+import http from 'node:http';
+import crypto from 'node:crypto';
+const fakeExe = crypto.randomBytes(300_000);
+let fakeDigest = 'sha256:' + crypto.createHash('sha256').update(fakeExe).digest('hex');
+const updServer = http.createServer((req, res) => {
+  if (req.url === '/latest') {
+    res.setHeader('content-type', 'application/json');
+    res.end(JSON.stringify({ tag_name: 'v99.0.0', published_at: new Date().toISOString(), body: '테스트용 새 버전', assets: [{ name: 'ClassroomTools-Setup-99.0.0.exe', size: fakeExe.length, digest: fakeDigest, browser_download_url: `http://127.0.0.1:${updServer.address().port}/setup.exe` }] }));
+  } else if (req.url === '/setup.exe') {
+    res.setHeader('content-length', String(fakeExe.length));
+    res.end(fakeExe);
+  } else res.writeHead(404).end();
+});
+await new Promise((r) => updServer.listen(0, '127.0.0.1', r));
+const updApi = `http://127.0.0.1:${updServer.address().port}/latest`;
+
 async function launch() {
-  const app = await electron.launch({ executablePath: electronPath, args: ['--no-sandbox', root], env: { ...process.env, CT_E2E: '1', CT_USER_DATA: userData, TZ: process.env.TZ } });
+  const app = await electron.launch({ executablePath: electronPath, args: ['--no-sandbox', root], env: { ...process.env, CT_E2E: '1', CT_USER_DATA: userData, TZ: process.env.TZ, CT_UPDATE_API: updApi, CT_UPDATE_NO_INSTALL: '1' } });
   const teacher = await app.firstWindow();
   await teacher.waitForSelector('.t-app');
   return { app, teacher };
@@ -480,6 +497,40 @@ await check('표시 방식 전환 시 남은 시간·일시정지 유지', async
   await dispatch(app, { type: 'timer/close' });
 });
 
+await check('종료 예고음: 6초 타이머 · 10초 전부터 → 1초마다 예고음 후 종료 알림음 1번', async () => {
+  const before = await app.evaluate(() => globalThis.__ct.soundLog.length);
+  const beforeR = await teacher.evaluate(() => (window.__soundPlays || []).length);
+  await dispatch(app, { type: 'timer/start', durationSec: 6, activity: '', sound: 'bell', volume: 40, mode: 'split', warnFrom: 10 });
+  await sleep(7500);
+  const log = await app.evaluate((_e, n) => globalThis.__ct.soundLog.slice(n).map((x) => x.sound), before);
+  const ticks = log.filter((x) => x.startsWith('tick'));
+  assert(ticks.length === 6 && ticks.every((x) => x === 'tick-urgent'), '예고음 ' + log.join(','));
+  assert(log.filter((x) => x === 'bell').length === 1 && log[log.length - 1] === 'bell', '종료 알림음 ' + log.join(','));
+  const played = (await teacher.evaluate(() => (window.__soundPlays || []).length)) - beforeR;
+  assert(played === 7, '교사 화면에서 재생된 소리 ' + played);
+  await dispatch(app, { type: 'timer/close' });
+  await dispatch(app, { type: 'timer/defaults', patch: { timerWarnFrom: 0 } });
+});
+
+await check('업데이트: 새 버전 확인 → 내려받기·무결성 검증 (설치 직전까지)', async () => {
+  await teacher.click('[data-tab=settings]');
+  await teacher.waitForSelector('nav >> text=새 버전', { timeout: 5000 }); // 시작할 때 자동 확인
+  await teacher.click('[data-testid=update-check]');
+  await until(async () => (await teacher.textContent('[data-testid=update-status]'))?.includes('v99.0.0'), 5000, '새 버전 표시 없음');
+  await teacher.screenshot({ path: path.join(shots, '17-teacher-update.png') });
+  const r = await app.evaluate(() => globalThis.__ct.updater.install());
+  assert(r.ok, JSON.stringify(r));
+  const info = await app.evaluate(() => ({ st: globalThis.__ct.ctl.rt.update.status, file: globalThis.__ct.updater.downloadedPath }));
+  assert(info.st === 'installing' && fs.readFileSync(info.file).equals(fakeExe), JSON.stringify(info));
+  // 파일이 손상된 경우(해시 불일치) 설치하지 않음
+  fakeDigest = 'sha256:' + '0'.repeat(64);
+  await app.evaluate(() => { globalThis.__ct.ctl.rt.update.status = 'idle'; });
+  await app.evaluate(() => globalThis.__ct.updater.check(false));
+  const bad = await app.evaluate(() => globalThis.__ct.updater.install());
+  assert(!bad.ok && /손상/.test(bad.error), JSON.stringify(bad));
+  fakeDigest = 'sha256:' + crypto.createHash('sha256').update(fakeExe).digest('hex');
+});
+
 await check('발표자 뽑기: 3명 뽑기 → 학생 화면 큰 이름', async () => {
   await dispatch(app, { type: 'picker/options', count: 3, mode: 'unique' });
   await teacher.click('[data-tab=picker]');
@@ -549,6 +600,7 @@ await check('중복 실행 방지: 두 번째 실행은 바로 종료', async ()
 });
 
 await app.close();
+updServer.close();
 console.log(`\n결과: ${passed}개 통과, ${failures.length}개 실패`);
 if (failures.length) {
   console.log('실패:', failures.join(', '));

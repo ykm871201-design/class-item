@@ -15,6 +15,8 @@ export function idleTimer(prev?: Partial<TimerState>): TimerState {
     mode: prev?.mode ?? 'split',
     source: 'manual',
     shown: false,
+    warnFrom: prev?.warnFrom ?? 0,
+    alerted: [],
     runId: newId('t_'),
   };
 }
@@ -33,6 +35,7 @@ export interface StartOptions {
   mode: TimerDisplayMode;
   source: 'manual' | 'schedule';
   scheduleId?: string;
+  warnFrom?: number;
 }
 
 export function startTimer(o: StartOptions, now: number): TimerState {
@@ -48,6 +51,8 @@ export function startTimer(o: StartOptions, now: number): TimerState {
     source: o.source,
     scheduleId: o.scheduleId,
     shown: true,
+    warnFrom: normalizeWarnFrom(o.warnFrom),
+    alerted: [],
     runId: newId('t_'),
   };
 }
@@ -64,7 +69,7 @@ export function resumeTimer(t: TimerState, now: number): TimerState {
 
 /** 처음 길이로 되돌림 (멈춘 상태) */
 export function resetTimer(t: TimerState): TimerState {
-  return { ...t, status: 'paused', remainingMs: t.durationMs, endAt: 0, finishedAt: undefined, runId: newId('t_') };
+  return { ...t, status: 'paused', remainingMs: t.durationMs, endAt: 0, finishedAt: undefined, alerted: [], runId: newId('t_') };
 }
 
 /** 시간 경과 반영. 종료로 바뀌면 justFinished=true (알림음은 이때 한 번만) */
@@ -77,4 +82,48 @@ export function tickTimer(t: TimerState, now: number): { timer: TimerState; just
 
 export function setTimerMode(t: TimerState, mode: TimerDisplayMode): TimerState {
   return { ...t, mode }; // 남은 시간·일시정지 상태는 그대로
+}
+
+// ---------------- 종료 예고음 ----------------
+
+export const WARN_FROM_CHOICES: { sec: number; label: string }[] = [
+  { sec: 0, label: '없음' },
+  { sec: 180, label: '3분 전부터' },
+  { sec: 60, label: '1분 전부터' },
+  { sec: 30, label: '30초 전부터' },
+  { sec: 10, label: '10초 전부터' },
+];
+
+/** 마지막 이 시간(초) 동안은 더 높은 소리 */
+export const URGENT_SEC = 10;
+
+export function normalizeWarnFrom(v: unknown): number {
+  const n = Math.round(Number(v));
+  return Number.isFinite(n) && n > 0 ? Math.min(3600, n) : 0;
+}
+
+export function warnFromLabel(sec: number): string {
+  if (!sec) return '없음';
+  return sec >= 60 && sec % 60 === 0 ? `${sec / 60}분 전부터` : `${sec}초 전부터`;
+}
+
+export interface TimerAlert {
+  key: string;
+  kind: 'tick' | 'tick-urgent';
+}
+
+/**
+ * 지금 울려야 할 종료 예고음.
+ * 끝나기 warnFrom초 전부터(타이머가 그보다 짧으면 처음부터) 종료 때까지 남은 초가 바뀔 때마다 한 번씩 울린다.
+ * 마지막 10초는 더 높은 소리. 일시정지 중에는 울리지 않는다.
+ * 감지가 늦어(절전 등) 지나간 초는 몰아서 울리지 않고 현재 초만 울린다.
+ */
+export function pendingAlerts(t: TimerState, now: number): { play: TimerAlert[] } {
+  if (t.status !== 'running' || !t.warnFrom) return { play: [] };
+  const rem = t.endAt - now;
+  if (rem <= 0 || rem > t.warnFrom * 1000) return { play: [] };
+  const sec = Math.ceil(rem / 1000); // 화면에 보이는 남은 초
+  const key = 's' + sec;
+  if (t.alerted.includes(key)) return { play: [] };
+  return { play: [{ key, kind: sec <= URGENT_SEC ? 'tick-urgent' : 'tick' }] };
 }

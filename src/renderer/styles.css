@@ -227,6 +227,8 @@ input[type=color] { width: 36px; height: 32px; padding: 0; border: 1px solid var
 .gender-seg button { padding: 5px 12px; }
 .gender-seg button.on.g-M { background: #339af0; }
 .gender-seg button.on.g-F { background: #f06595; }
+.progress { height: 10px; background: #e9ecef; border-radius: 999px; overflow: hidden; }
+.progress-fill { height: 100%; background: var(--primary); transition: width 0.2s; }
 .group-editor { background: #f8f9fb; border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; margin-top: 10px; }
 .group-row { padding: 4px 0; border-bottom: 1px dashed var(--line); }
 .group-row:last-of-type { border-bottom: 0; }
