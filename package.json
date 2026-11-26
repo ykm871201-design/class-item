@@ -1,6 +1,6 @@
 {
   "name": "classroom-tools",
-  "version": "1.5.0",
+  "version": "1.5.1",
   "description": "초등 교사용 교실 도구 (큰 글씨 칠판, 타이머, 자리 배치, 발표 뽑기)",
   "main": "dist/main.js",
   "scripts": {
