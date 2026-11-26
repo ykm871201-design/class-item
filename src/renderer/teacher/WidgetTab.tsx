@@ -395,7 +395,7 @@ function StudentWidgetSettings() {
         </label>
       </div>
       <p className="small muted" style={{ margin: '4px 0 0' }}>
-        끄면 학생 화면 모니터에서 다른 프로그램(PPT, 동영상 등)을 열 때 그 창이 위젯 위로 올라옵니다. 단, 큰 칸에 타이머를 띄우는 동안에는 잠시 맨 위에 표시합니다. 위젯이 아닌 칠판·자리 배치 등은 ‘설정’ 탭의 맨 위 표시 설정을 따릅니다.
+        끄면 학생 화면 모니터에서 다른 프로그램(PPT, 동영상 등)을 열 때 그 창이 위젯 위로 올라옵니다. 단, 타이머가 진행 중인 동안에만 맨 위에 표시하고, 끝나면(끝난 화면이 남아 있어도) 다시 이 설정을 따릅니다. 위젯이 아닌 칠판·자리 배치 등은 ‘설정’ 탭의 맨 위 표시 설정을 따릅니다.
       </p>
       <div className="col" style={{ marginTop: 10 }}>
         <span className="field-label">알림장 (학생 위젯 아래쪽에 보임)</span>

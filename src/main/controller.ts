@@ -125,7 +125,8 @@ export class Controller {
 
   private showTimerOnStudent(reason: 'timer' | 'schedule'): boolean {
     const ok = this.ports.showStudent({ inactive: reason === 'schedule', reason });
-    this.ports.applyTopmost(this.rt.timer.shown);
+    const t = this.rt.timer;
+    this.ports.applyTopmost(t.shown && (t.status === 'running' || t.status === 'paused'));
     return ok;
   }
 
@@ -149,6 +150,8 @@ export class Controller {
     if (r.justFinished) {
       this.rt.timer = r.timer;
       if (!r.timer.alerted.includes('end') && r.timer.sound !== 'none' && r.timer.volume > 0) this.ports.playSound({ runId: r.timer.runId, sound: r.timer.sound, volume: r.timer.volume, at: r.timer.endAt });
+      // 끝난 화면은 닫을 때까지 남지만, 타이머 때문에 강제로 맨 위에 두는 것은 여기서 끝 (이후에는 맨 위 표시 설정을 따름)
+      this.ports.applyTopmost(false);
       this.changed(false);
     }
     // 종료 상태는 교사가 닫을 때까지 유지. 설정에 따라 알림음을 일정 간격으로 다시 울림
@@ -388,7 +391,7 @@ export class Controller {
       case 'student/show':
         if (!this.ports.showStudent({ inactive: false, reason: 'teacher' }))
           return { ok: false, error: '학생용 디스플레이를 찾을 수 없습니다. 설정에서 디스플레이를 선택하거나 미리보기 창을 열어 주세요.' };
-        this.ports.applyTopmost(this.rt.timer.shown && this.rt.timer.status !== 'idle');
+        this.ports.applyTopmost(this.rt.timer.shown && (this.rt.timer.status === 'running' || this.rt.timer.status === 'paused'));
         return;
       case 'student/hide':
         this.ports.applyTopmost(false);

@@ -552,6 +552,33 @@ await check('학생 위젯의 맨 위 표시는 위젯 설정을 따로 따름 (
   await dispatch(app, { type: 'student/base', base: 'widget', main: 'clock' });
   await new Promise((r) => setTimeout(r, 200));
   assert(!(await swInfo(app)).top, '위젯으로 돌아오면 다시 일반 창이어야 함');
+  // 이미 일반 창이면 ‘맨 위 해제’를 다시 보내지 않아야 함 (Windows는 해제 요청을 받으면 그 창을 다른 창들 앞으로 올림)
+  await app.evaluate(() => {
+    const w = globalThis.__ct.student.win;
+    globalThis.__topCalls = [];
+    if (!w.__origTop) w.__origTop = w.setAlwaysOnTop.bind(w);
+    w.setAlwaysOnTop = (...a) => (globalThis.__topCalls.push(a[0]), w.__origTop(...a));
+  });
+  await app.evaluate(({ screen }) => screen.emit('display-metrics-changed', {}, screen.getAllDisplays()[1], ['workArea']));
+  await dispatch(app, { type: 'student/widgetMain', main: 'board' });
+  await dispatch(app, { type: 'board/publish' });
+  await dispatch(app, { type: 'student/show' });
+  await dispatch(app, { type: 'student/widgetMain', main: 'clock' });
+  await new Promise((r) => setTimeout(r, 300));
+  const calls = await app.evaluate(() => globalThis.__topCalls.slice());
+  assert(calls.length === 0 && !(await swInfo(app)).top, '일반 창인데 맨 위 설정 호출이 반복됨: ' + JSON.stringify(calls));
+  // 타이머는 진행 중에만 맨 위, 끝나면(끝난 화면이 남아 있어도) 설정대로 일반 창
+  await dispatch(app, { type: 'timer/start', durationSec: 2, activity: '', sound: 'none', volume: 0, mode: 'split', warnFrom: 0 });
+  await new Promise((r) => setTimeout(r, 300));
+  assert((await swInfo(app)).top, '타이머 진행 중인데 맨 위가 아님');
+  await new Promise((r) => setTimeout(r, 2500));
+  const fin = await app.evaluate(() => globalThis.__ct.ctl.rt.timer.status);
+  assert(fin === 'finished' && !(await swInfo(app)).top, `타이머가 끝났는데 계속 맨 위 (${fin})`);
+  await dispatch(app, { type: 'timer/close' });
+  await app.evaluate(() => {
+    const w = globalThis.__ct.student.win;
+    w.setAlwaysOnTop = w.__origTop;
+  });
   await dispatch(app, { type: 'widget/update', patch: { studentOnTop: true } });
   await new Promise((r) => setTimeout(r, 200));
   assert((await swInfo(app)).top, '위젯 맨 위 설정을 켜도 맨 위가 아님');
