@@ -305,6 +305,15 @@ function StudentWidget({ view, w }: { view: StudentView; w: StudentWidgetView })
               <div className="sw-meal" data-testid="sw-meal">{w.meal?.dishes.length ? w.meal.dishes.join(' · ') : w.meal?.note ?? '—'}</div>
             </section>
           )}
+          {mainKind !== 'clock' && (
+            // 큰 칸에 칠판·타이머가 떠서 큰 시계가 가려질 때만: 급식 아래에 지금 시각
+            <section className="sw-card sw-now" data-sw-card="now" data-testid="sw-now">
+              <span className="sw-now-label">지금 시각</span>
+              <span className="sw-now-time">
+                {pad2(new Date(now).getHours())}:{pad2(new Date(now).getMinutes())}
+              </span>
+            </section>
+          )}
           {on('week') && (
             <section className="sw-card sw-week" data-sw-card="week">
               <div className="sw-head">이번 주 시간표</div>
@@ -388,31 +397,26 @@ function WeekTimetable({ w, now }: { w: StudentWidgetView; now: number }) {
   const today = d.getDay() - 1;
   const p = periodNow(w.periods, d);
   const count = w.periods.count;
+  // 칸 높이에 맞춰 줄 높이가 늘고 줄도록 격자로 (현재 시각 칸이 생겨도 마지막 교시까지 다 보이게)
   return (
-    <table className="sw-tt">
-      <thead>
-        <tr>
-          <th />
-          {['월', '화', '수', '목', '금'].map((x, i) => (
-            <th key={x} className={i === today ? 'today' : ''}>
-              {x}
-            </th>
-          ))}
-        </tr>
-      </thead>
-      <tbody>
-        {Array.from({ length: count }, (_, no) => (
-          <tr key={no}>
-            <th>{no + 1}</th>
-            {[0, 1, 2, 3, 4].map((day) => (
-              <td key={day} className={`${w.timetable[day]?.[no] ? 'filled' : ''}${day === today && p.current?.kind === 'class' && p.current.no === no + 1 ? ' cur' : ''}`}>
-                <FitText text={w.timetable[day]?.[no] ?? ''} ratio={0.62} />
-              </td>
-            ))}
-          </tr>
-        ))}
-      </tbody>
-    </table>
+    <div className="sw-tt" style={{ gridTemplateRows: `auto repeat(${count}, minmax(0, 1fr))`, ['--rows' as any]: count + 1 }}>
+      <span />
+      {['월', '화', '수', '목', '금'].map((x, i) => (
+        <span key={x} className={`sw-tt-h${i === today ? ' today' : ''}`}>
+          {x}
+        </span>
+      ))}
+      {Array.from({ length: count }, (_, no) => [
+        <span key={`n${no}`} className="sw-tt-h">
+          {no + 1}
+        </span>,
+        ...[0, 1, 2, 3, 4].map((day) => (
+          <div key={`${no}-${day}`} className={`sw-tt-cell${w.timetable[day]?.[no] ? ' filled' : ''}${day === today && p.current?.kind === 'class' && p.current.no === no + 1 ? ' cur' : ''}`}>
+            <FitText text={w.timetable[day]?.[no] ?? ''} ratio={0.62} />
+          </div>
+        )),
+      ])}
+    </div>
   );
 }
 

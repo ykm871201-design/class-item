@@ -779,6 +779,7 @@ await check('학생용 위젯: 큰 시계 → 칠판 → 칠판+타이머 → �
   const all = await sw.textContent('[data-testid=student-widget]');
   assert(!all.includes('공문 제출') && !all.includes('개인 병원') && !all.includes('학부모 상담'), '학생 위젯에 구글·내 일정이 보임');
   await sw.screenshot({ path: path.join(shots, '19-student-widget-clock.png') });
+  assert(!(await sw.$('[data-testid=sw-now]')), '큰 시계가 보이는데 급식 아래 현재 시각 칸도 보임');
   // 칠판 표시 → 큰 칸에 칠판
   await dispatch(app, { type: 'board/updateDraft', patch: { text: '조용히 책 읽기' } });
   await dispatch(app, { type: 'board/publish' });
@@ -787,6 +788,15 @@ await check('학생용 위젯: 큰 시계 → 칠판 → 칠판+타이머 → �
   await dispatch(app, { type: 'timer/start', durationSec: 90, activity: '책 읽기', sound: 'none', volume: 0, mode: 'split' });
   await sw.waitForSelector('[data-testid=student-widget][data-main=split] [data-testid=split-timer]', { timeout: 3000 });
   await sw.screenshot({ path: path.join(shots, '20-student-widget-split.png') });
+  // 큰 시계가 가려지면 급식 바로 아래에 지금 시각
+  const nowInfo = await sw.evaluate(() => {
+    const n = document.querySelector('[data-testid=sw-now]');
+    const cards = [...document.querySelectorAll('.sw-right > [data-sw-card]')].map((x) => x.getAttribute('data-sw-card'));
+    const r = n?.getBoundingClientRect();
+    const d = new Date();
+    return { text: n?.textContent ?? '', cards, inside: !!r && r.bottom <= window.innerHeight + 1, hm: `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}` };
+  });
+  assert(nowInfo.text.includes(nowInfo.hm) && nowInfo.cards[nowInfo.cards.indexOf('meal') + 1] === 'now' && nowInfo.inside, '현재 시각 칸 ' + JSON.stringify(nowInfo));
   await dispatch(app, { type: 'timer/setMode', mode: 'full' });
   await sw.waitForSelector('[data-testid=student-widget][data-main=timer] .st-timer-full', { timeout: 3000 });
   await dispatch(app, { type: 'timer/close' });
