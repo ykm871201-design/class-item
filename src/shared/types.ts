@@ -188,7 +188,73 @@ export interface Settings {
   lastTimerSec: number;
 }
 
-export type StudentBase = 'blank' | 'board' | 'seating' | 'picker' | 'widget';
+export type StudentBase = 'blank' | 'board' | 'seating' | 'picker' | 'widget' | 'election';
+
+// ----- 학급임원선거 -----
+
+/** 설정 → 투표 진행 → 투표 마감(결과 확인) → 결과 공개 */
+export type ElectionPhase = 'setup' | 'voting' | 'closed' | 'published';
+
+export interface ElectionCandidate {
+  id: string;
+  studentId: string;
+  name: string; // 등록 당시 이름 (명단에서 이름이 바뀌거나 삭제돼도 결과 보존)
+  number: number; // 후보 기호
+  color: string;
+}
+
+export interface Election {
+  id: string;
+  classId: string;
+  title: string; // 선거명
+  position: string; // 직책명 (회장·부회장 등 직접 입력)
+  seats: number; // 선출 인원
+  voterLimit: number; // 투표 가능 인원
+  maxChoices: number; // 1인당 선택 가능한 후보 수
+  candidates: ElectionCandidate[];
+  phase: ElectionPhase;
+  /**
+   * 후보별 득표 합계. 개인별·순서별 기록은 남기지 않는다.
+   * 투표 중에는 교사·위젯·학생 화면으로 보내는 상태에서 뺀다.
+   */
+  tally: Record<string, number>;
+  ballots: number; // 투표를 마친 인원 (기권 포함)
+  abstain: number; // 기권 수
+  /** 지금 열려 있는 투표 기회 1회 (제출되면 사라짐). 토큰은 무작위 값이며 투표자·선택과 무관 */
+  openBallot: { token: string; openedAt: number } | null;
+  /** 접수된 투표 기회 토큰 — 같은 제출의 재전송을 다시 세지 않기 위한 것 (선택 내용과 연결하지 않음) */
+  receipts: string[];
+  createdAt: number;
+  startedAt?: number;
+  closedAt?: number;
+  publishedAt?: number;
+  /** 동점 재투표: 원래 선거 ID와 1차에서 이미 당선된 후보 이름 */
+  runoff?: { parentId: string; priorWinners: string[] };
+  runoffChildId?: string;
+}
+
+export interface ElectionResultRow {
+  candidateId: string;
+  number: number;
+  name: string;
+  color: string;
+  votes: number;
+  elected: boolean;
+  tied: boolean; // 당선 경계 동점
+}
+
+export type ElectionResultStatus = 'decided' | 'tie' | 'no-votes' | 'all-abstain';
+
+export interface ElectionResult {
+  status: ElectionResultStatus;
+  rows: ElectionResultRow[]; // 득표 많은 순 (같으면 기호 순 — 표시용, 당선 판정에는 쓰지 않음)
+  winners: string[]; // 당선 확정 후보 ID
+  tied: string[]; // 재투표가 필요한 동점 후보 ID
+  seatsLeft: number; // 재투표로 뽑아야 할 인원
+  ballots: number;
+  abstain: number;
+  totalMarks: number; // 후보 득표 합계 (복수 선택이면 투표 인원보다 많을 수 있음)
+}
 
 // ----- 바탕화면 위젯 보드 -----
 
@@ -279,6 +345,11 @@ export interface AppData {
   /** 학생용 위젯의 큰 칸: 평소 시계, 칠판을 띄우면 칠판 (타이머는 따로 겹쳐 표시) */
   studentWidgetMain: 'clock' | 'board';
   widget: WidgetData;
+  elections: Election[];
+  /** 선거 관리 PIN (솔트+해시만 저장, 평문 저장 안 함) */
+  electionPin: { salt: string; hash: string } | null;
+  /** 학생 화면(TV)에 띄운 선거 */
+  electionShownId: string | null;
 }
 
 // ----- 런타임 (저장하지 않음) -----
@@ -388,8 +459,23 @@ export interface WidgetRuntime {
   visible: boolean;
 }
 
+/** 투표 전용 창 상태 (교사 화면 표시용) */
+export interface VoteWindowStatus {
+  open: boolean;
+  electionId: string | null;
+  locked: string | null; // 잠긴 이유 (모니터 연결 변경 등)
+}
+
+export interface ElectionRuntime {
+  pinSet: boolean;
+  /** 저장이 확인되지 않은 접수 표가 있음 (다음 학생 투표를 열 수 없음) */
+  unsaved: boolean;
+  vote: VoteWindowStatus;
+}
+
 export interface Runtime {
   timer: TimerState;
+  election: ElectionRuntime;
   update: UpdateState;
   widget: WidgetRuntime;
   seatingReveal: (RevealState & { classId: string; result: SeatingResult }) | null;
@@ -474,8 +560,43 @@ export interface StudentWidgetView {
   hidden: StudentCardId[];
 }
 
+/** 학생 화면(TV)에 보낼 선거 정보 — 투표 중에는 득표·개인 선택 없음, 결과는 공개한 뒤에만 */
+export interface StudentElectionView {
+  id: string;
+  title: string;
+  position: string;
+  seats: number;
+  maxChoices: number;
+  phase: ElectionPhase;
+  ballots: number;
+  voterLimit: number;
+  candidates: { number: number; name: string; color: string }[];
+  runoff: boolean;
+  priorWinners: string[];
+  result: {
+    status: ElectionResultStatus;
+    rows: { number: number; name: string; color: string; votes: number; elected: boolean; tied: boolean }[];
+    ballots: number;
+    abstain: number;
+    totalMarks: number;
+    seatsLeft: number;
+  } | null;
+}
+
+/** 투표 전용 창에 보낼 정보 — 후보와 투표 기회만 (득표·관리 정보 없음) */
+export interface VoteView {
+  election: { id: string; title: string; position: string; maxChoices: number; phase: ElectionPhase; candidates: { id: string; number: number; name: string; color: string }[] } | null;
+  ballot: { token: string } | null;
+  ballots: number;
+  voterLimit: number;
+  locked: string | null;
+  unsaved: boolean;
+  admin: boolean;
+}
+
 export interface StudentView {
   base: StudentBase;
+  election?: StudentElectionView | null;
   widget?: StudentWidgetView | null;
   board: StudentBoardView;
   seating: StudentSeatingView | null;

@@ -5,10 +5,24 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
+import { fileURLToPath } from 'node:url';
 
 const require = createRequire(import.meta.url);
-const { _electron: electron } = require('playwright'); // 전역 설치된 Playwright 사용
-const root = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
+// 프로젝트 devDependency(playwright-core)를 먼저 쓰고, 없으면 전역 Playwright. Electron 테스트에는 브라우저 내려받기가 필요 없다.
+function loadPlaywright() {
+  for (const name of ['playwright-core', 'playwright']) {
+    try {
+      return require(name);
+    } catch {
+      /* 다음 후보 */
+    }
+  }
+  console.error('Playwright를 찾을 수 없습니다. 먼저 `npm install`을 실행해 주세요 (devDependency: playwright-core).');
+  process.exit(2);
+}
+const { _electron: electron } = loadPlaywright();
+// Windows에서도 맞는 경로 (URL.pathname은 /C:/... 처럼 앞에 /가 붙고 한글·공백이 %인코딩되어 틀림)
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const electronPath = require(path.join(root, 'node_modules/electron'));
 const userData = fs.mkdtempSync(path.join(os.tmpdir(), 'ct-e2e-'));
 const shots = path.join(root, 'tests-e2e', 'screenshots');
@@ -849,10 +863,219 @@ await check('교사 화면 스크린샷', async () => {
   await teacher.screenshot({ path: path.join(shots, '12-teacher-timer.png') });
 });
 
+// ---------------- 학급임원선거 ----------------
+const voteWin = async (app) => {
+  for (const w of app.windows()) if ((await w.title()) === '투표') return w;
+  return null;
+};
+async function modalOk(page, pin) {
+  await page.waitForSelector('[data-testid=el-modal]');
+  if (await page.$('[data-testid=el-modal-check]')) await page.check('[data-testid=el-modal-check]');
+  if (pin !== undefined) await page.fill('[data-testid=el-modal-pin]', pin);
+  await page.click('[data-testid=el-modal-ok]');
+  await sleep(300);
+}
+async function votePin(vw, pin = '2468') {
+  if (!(await vw.$('[data-testid=vote-pinpad]'))) await vw.click('[data-testid=vote-teacher]');
+  for (const k of pin) await vw.click(`[data-key="${k}"]`);
+  await vw.click('[data-key="확인"]');
+  await vw.waitForSelector('[data-testid=vote-admin]');
+}
+const elState = (app) =>
+  app.evaluate(() => {
+    const c = globalThis.__ct.ctl;
+    const e = c.data.elections.find((x) => x.phase !== 'setup' || x.candidates.length) ?? c.data.elections[0];
+    return e ? { id: e.id, phase: e.phase, ballots: e.ballots, abstain: e.abstain, tally: { ...e.tally }, open: !!e.openBallot, cands: e.candidates.map((x) => ({ id: x.id, n: x.number, name: x.name })) } : null;
+  });
+
+await check('선거 설정: PIN(해시 저장), 후보 등록, 잘못된 설정 차단, PIN 틀리면 시작 안 됨 → 투표 시작', async () => {
+  await setDisplays(app, true);
+  await teacher.click('[data-tab=election]');
+  await teacher.fill('[data-testid=pin-new]', '2468');
+  await teacher.fill('[data-testid=pin-new2]', '2468');
+  await teacher.click('[data-testid=pin-save]');
+  await sleep(300);
+  const pinStored = await app.evaluate(() => JSON.stringify(globalThis.__ct.ctl.data.electionPin));
+  assert(pinStored && !pinStored.includes('2468'), 'PIN 저장 형태 ' + pinStored);
+  await teacher.click('[data-testid=election-create]');
+  await teacher.waitForSelector('[data-testid=election-detail]');
+  await teacher.fill('[data-testid=el-title]', '2학기 학급임원선거');
+  await teacher.fill('[data-testid=el-voters]', '4');
+  await teacher.press('[data-testid=el-voters]', 'Enter');
+  for (let i = 0; i < 3; i++) {
+    await teacher.selectOption('[data-testid=el-pick]', { index: 1 });
+    await teacher.click('[data-testid=el-add]');
+    await sleep(150);
+  }
+  let st = await elState(app);
+  assert(st.cands.length === 3 && st.cands.map((x) => x.n).join() === '1,2,3', '후보 ' + JSON.stringify(st.cands));
+  // 같은 학생을 다시 후보로 (화면 목록에서는 빠지지만 요청을 직접 보내도 거부)
+  const dup = await app.evaluate((_e, id) => {
+    const c = globalThis.__ct.ctl;
+    const e = c.data.elections.find((x) => x.id === id);
+    return c.dispatch({ type: 'election/addCandidate', id, studentId: e.candidates[0].studentId });
+  }, st.id);
+  assert(!dup.ok, '중복 후보 등록됨');
+  // 1인당 선택 수 2 > 선출 1 → 시작 버튼 막힘
+  await teacher.fill('[data-testid=el-max]', '2');
+  await teacher.press('[data-testid=el-max]', 'Enter');
+  await teacher.waitForSelector('[data-testid=el-problems]');
+  assert(await teacher.isDisabled('[data-testid=el-start]'), '잘못된 설정인데 시작 가능');
+  await teacher.fill('[data-testid=el-max]', '1');
+  await teacher.press('[data-testid=el-max]', 'Enter');
+  await sleep(200);
+  await teacher.click('[data-testid=el-start]');
+  await modalOk(teacher, '1111');
+  assert((await elState(app)).phase === 'setup', '틀린 PIN으로 시작됨');
+  await teacher.click('[data-testid=el-start]');
+  await modalOk(teacher, '2468');
+  st = await elState(app);
+  assert(st.phase === 'voting', '시작 안 됨 ' + st.phase);
+  await teacher.screenshot({ path: path.join(shots, '27-teacher-election-voting.png') });
+});
+
+await check('투표 화면: 교사 모니터에만 열림 · TV엔 안내만 · 더블클릭·재전송 1회 집계 · 다음 학생에 이전 선택 없음 · 득표가 상태 전달에 없음', async () => {
+  await teacher.click('[data-testid=el-show-tv]');
+  await teacher.click('[data-testid=el-kiosk]');
+  await modalOk(teacher);
+  const vw = await until(() => voteWin(app), 8000, '투표 창 없음');
+  await vw.waitForSelector('[data-testid=vote-wait]');
+  const info = await app.evaluate(() => {
+    const v = globalThis.__ct.vote.win;
+    const t = globalThis.__ct.teacherWin;
+    return { bounds: v.getBounds(), top: v.isAlwaysOnTop(), teacherVisible: t.isVisible() };
+  });
+  assert(info.bounds.x < 1920 && info.top && !info.teacherVisible, '투표 창 위치·상태 ' + JSON.stringify(info));
+  const st0 = await elState(app);
+  const c = Object.fromEntries(st0.cands.map((x) => [x.n, x.id]));
+
+  // 1번째 학생: 2번 선택 → 확인 → 최종 제출 더블클릭
+  await votePin(vw);
+  await vw.click('[data-testid=vote-open-next]');
+  await vw.waitForSelector('[data-testid=vote-ballot]');
+  const token = (await vw.evaluate(() => window.voteApi.getView())).ballot.token;
+  await vw.click('[data-cand="2"]');
+  assert(await vw.$('.vote-cand.on[data-cand="2"]'), '선택 표시 없음');
+  await vw.screenshot({ path: path.join(shots, '28-vote-ballot.png') });
+  await vw.click('[data-testid=vote-next]');
+  await vw.waitForSelector('[data-testid=vote-confirm]');
+  await vw.dblclick('[data-testid=vote-submit]');
+  await vw.waitForSelector('[data-testid=vote-done]');
+  // 같은 기회로 다른 후보를 다시 보내도(재전송) 다시 세지 않음
+  const re = await vw.evaluate((t) => window.voteApi.submit({ token: t, choices: [], abstain: true }), token);
+  assert(re.ok, '재전송 응답 ' + JSON.stringify(re));
+  let st = await elState(app);
+  assert(st.ballots === 1 && st.abstain === 0 && st.tally[c[2]] === 1 && Object.keys(st.tally).length === 1, '1회 집계 아님 ' + JSON.stringify(st));
+
+  // 투표 중 교사 화면 상태(IPC)에는 득표·토큰이 없음
+  const fsTeacher = await teacher.evaluate(() => window.api.getState());
+  const te = fsTeacher.data.elections.find((x) => x.id === st.id);
+  assert(JSON.stringify(te.tally) === '{}' && te.receipts.length === 0 && !JSON.stringify(fsTeacher).includes(token), '교사 상태에 득표·토큰 포함');
+  // TV: 안내·후보·진행 인원만
+  const sw = await studentWin(app);
+  await sw.waitForSelector('[data-testid=st-election]');
+  const tvText = await sw.textContent('[data-testid=st-election]');
+  assert(tvText.includes('투표한 학생 1 / 4명') && !/\d+표/.test(tvText) && !tvText.includes('당선'), 'TV 내용 ' + tvText);
+  const tvView = await sw.evaluate(() => window.studentApi.getView());
+  assert(!/tally|votes/.test(JSON.stringify(tvView)), 'TV 상태에 득표 포함');
+  await sw.screenshot({ path: path.join(shots, '29-tv-election-info.png') });
+
+  // 2번째 학생: 이전 선택 흔적 없음 → 기권
+  await vw.waitForSelector('[data-testid=vote-wait]', { timeout: 6000 });
+  await votePin(vw);
+  await vw.click('[data-testid=vote-open-next]');
+  await vw.waitForSelector('[data-testid=vote-ballot]');
+  assert((await vw.$$('.vote-cand.on')).length === 0, '이전 학생 선택이 남아 있음');
+  await vw.click('[data-testid=vote-abstain]');
+  await vw.waitForSelector('[data-testid=vote-confirm]');
+  await vw.click('[data-testid=vote-submit]');
+  await vw.waitForSelector('[data-testid=vote-done]');
+  // 3번째 학생: 1번
+  await vw.waitForSelector('[data-testid=vote-wait]', { timeout: 6000 });
+  await votePin(vw);
+  await vw.click('[data-testid=vote-open-next]');
+  await vw.waitForSelector('[data-testid=vote-ballot]');
+  await vw.click('[data-cand="1"]');
+  await vw.click('[data-testid=vote-next]');
+  await vw.click('[data-testid=vote-submit]');
+  await vw.waitForSelector('[data-testid=vote-done]');
+  st = await elState(app);
+  assert(st.ballots === 3 && st.abstain === 1 && st.tally[c[1]] === 1 && st.tally[c[2]] === 1, '집계 ' + JSON.stringify(st));
+});
+
+await check('투표 화면 보호: 새로고침·닫기 단축키 무시, PIN 없이는 교사 동작 불가, 모니터 연결이 바뀌면 잠그고 열린 기회 취소', async () => {
+  const vw = await voteWin(app);
+  await vw.waitForSelector('[data-testid=vote-wait]', { timeout: 6000 });
+  await vw.evaluate(() => (window.__marker = 1));
+  for (const k of [{ keyCode: 'F5' }, { keyCode: 'R', modifiers: ['control'] }, { keyCode: 'W', modifiers: ['control'] }, { keyCode: 'F4', modifiers: ['alt'] }]) {
+    await app.evaluate((_e, k) => {
+      const wc = globalThis.__ct.vote.win.webContents;
+      wc.sendInputEvent({ type: 'keyDown', ...k });
+      wc.sendInputEvent({ type: 'keyUp', ...k });
+    }, k);
+  }
+  await sleep(600);
+  assert((await vw.evaluate(() => window.__marker)) === 1, '투표 화면이 새로고침됨');
+  assert(await app.evaluate(() => !!globalThis.__ct.vote.win && !globalThis.__ct.vote.win.isDestroyed()), '투표 창이 닫힘');
+  const noAdmin = await vw.evaluate(() => window.voteApi.admin('next'));
+  assert(!noAdmin.ok, 'PIN 없이 다음 투표가 열림');
+  // 학생이 선택하던 중 TV 연결이 끊김 → 잠금, 기회 취소
+  await votePin(vw);
+  await vw.click('[data-testid=vote-open-next]');
+  await vw.waitForSelector('[data-testid=vote-ballot]');
+  await vw.click('[data-cand="3"]');
+  await setDisplays(app, false);
+  await vw.waitForSelector('text=잠시 멈춤');
+  assert((await vw.$$('.vote-cand')).length === 0, '잠금 화면에 후보 선택이 남음');
+  let st = await elState(app);
+  assert(!st.open && st.ballots === 3, '열린 기회가 취소되지 않음 ' + JSON.stringify(st));
+  await setDisplays(app, true);
+  await votePin(vw);
+  await vw.click('[data-testid=vote-resume]');
+  await vw.click('text=메뉴 닫기');
+  await vw.waitForSelector('[data-testid=vote-wait]');
+  // 교사 메뉴 → 투표 화면 닫기 → 교사용 창 복귀
+  await votePin(vw);
+  await vw.click('[data-testid=vote-exit]');
+  await until(() => app.evaluate(() => !globalThis.__ct.vote.active && globalThis.__ct.teacherWin.isVisible()), 5000, '교사 창 복귀 안 됨');
+});
+
+await check('마감(남은 인원 확인) → 결과 확인 → 동점이면 재투표 필요 → TV 공개 → 동점 후보로 재투표 생성', async () => {
+  await teacher.click('[data-testid=el-close]');
+  await teacher.waitForSelector('[data-testid=el-modal]');
+  const msg = await teacher.textContent('[data-testid=el-modal]');
+  assert(msg.includes('아직 1명이 투표하지 않았습니다'), '마감 확인 메시지 ' + msg);
+  await modalOk(teacher, '2468');
+  await teacher.waitForSelector('[data-testid=el-result]');
+  const status = await teacher.getAttribute('[data-testid=el-status]', 'data-status');
+  assert(status === 'tie', '동점 판정 ' + status);
+  const summary = await teacher.textContent('[data-testid=el-summary]');
+  assert(summary.includes('투표한 학생 3명') && summary.includes('기권 1명'), summary);
+  await teacher.screenshot({ path: path.join(shots, '30-teacher-election-result.png') });
+  // 추가 제출 차단
+  const late = await app.evaluate(() => globalThis.__ct.ctl.elections.submit('whatever', [], true));
+  assert(!late.ok, '마감 후 제출 접수됨');
+  await teacher.click('[data-testid=el-publish]');
+  const sw = await studentWin(app);
+  await sw.waitForSelector('[data-testid=st-election][data-phase=published]');
+  const tv = await sw.textContent('[data-testid=st-election]');
+  assert(tv.includes('1표') && tv.includes('동점·재투표') && tv.includes('재투표로 1명') && (await sw.$$('.st-elect-badge.won')).length === 0, 'TV 결과 ' + tv);
+  await sw.screenshot({ path: path.join(shots, '31-tv-election-result.png') });
+  await teacher.click('[data-testid=el-runoff]');
+  await sleep(300);
+  const ro = await app.evaluate(() => {
+    const c = globalThis.__ct.ctl;
+    const r = c.data.elections.find((x) => x.runoff);
+    return r ? { seats: r.seats, n: r.candidates.map((x) => x.number).join(), phase: r.phase } : null;
+  });
+  assert(ro && ro.seats === 1 && ro.n === '1,2' && ro.phase === 'setup', '재투표 ' + JSON.stringify(ro));
+  await dispatch(app, { type: 'student/base', base: 'blank' });
+});
+
 // 재시작 후 복원
 const before = await app.evaluate(() => {
   const c = globalThis.__ct.ctl;
-  return { n: c.cls.students.length, board: c.data.boardPublished.text, sched: c.data.schedules.length, fixed: c.cls.seating.fixed.length, confirmed: !!c.cls.seating.confirmed };
+  return { n: c.cls.students.length, board: c.data.boardPublished.text, sched: c.data.schedules.length, fixed: c.cls.seating.fixed.length, confirmed: !!c.cls.seating.confirmed, elections: c.data.elections.map((e) => `${e.phase}:${e.ballots}:${e.abstain}:${JSON.stringify(e.tally)}`).join('|'), pin: !!c.data.electionPin };
 });
 await app.evaluate(({ app }) => {
   globalThis.__ct.store.flush();
@@ -863,8 +1086,9 @@ await check('앱 재시작 후 데이터 복원', async () => {
   ({ app, teacher } = await launch());
   const after = await app.evaluate(() => {
     const c = globalThis.__ct.ctl;
-    return { n: c.cls.students.length, board: c.data.boardPublished.text, sched: c.data.schedules.length, fixed: c.cls.seating.fixed.length, confirmed: !!c.cls.seating.confirmed };
+    return { n: c.cls.students.length, board: c.data.boardPublished.text, sched: c.data.schedules.length, fixed: c.cls.seating.fixed.length, confirmed: !!c.cls.seating.confirmed, elections: c.data.elections.map((e) => `${e.phase}:${e.ballots}:${e.abstain}:${JSON.stringify(e.tally)}`).join('|'), pin: !!c.data.electionPin };
   });
+  assert(before.elections.includes('published:3:1'), '재시작 전 선거 상태 ' + before.elections);
   assert(JSON.stringify(after) === JSON.stringify(before), JSON.stringify({ before, after }));
 });
 

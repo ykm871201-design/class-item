@@ -9,6 +9,7 @@ import { formatClock, formatDateTimeKo } from '../../shared/util';
 import { useNow } from '../common/hooks';
 import { BoardTab } from './BoardTab';
 import { TimerTab } from './TimerTab';
+import { ElectionTab } from './ElectionTab';
 import { ScheduleTab } from './ScheduleTab';
 import { SeatingTab } from './SeatingTab';
 import { PickerTab } from './PickerTab';
@@ -16,13 +17,14 @@ import { RosterTab } from './RosterTab';
 import { SettingsTab } from './SettingsTab';
 import { WidgetTab } from './WidgetTab';
 
-type Tab = 'board' | 'timer' | 'schedule' | 'seating' | 'picker' | 'roster' | 'widget' | 'settings';
+type Tab = 'board' | 'timer' | 'schedule' | 'seating' | 'picker' | 'election' | 'roster' | 'widget' | 'settings';
 const TABS: { id: Tab; label: string; ico: string }[] = [
   { id: 'board', label: '칠판', ico: '📝' },
   { id: 'timer', label: '타이머', ico: '⏱️' },
   { id: 'schedule', label: '예약', ico: '⏰' },
   { id: 'seating', label: '자리 배치', ico: '🪑' },
   { id: 'picker', label: '발표 뽑기', ico: '🎯' },
+  { id: 'election', label: '학급임원선거', ico: '🗳️' },
   { id: 'roster', label: '학생 명단', ico: '👥' },
   { id: 'widget', label: '위젯', ico: '🗓️' },
   { id: 'settings', label: '설정', ico: '⚙️' },
@@ -87,6 +89,7 @@ function App() {
             {tab === 'schedule' && <ScheduleTab />}
             {tab === 'seating' && <SeatingTab />}
             {tab === 'picker' && <PickerTab />}
+            {tab === 'election' && <ElectionTab />}
             {tab === 'roster' && <RosterTab />}
             {tab === 'widget' && <WidgetTab />}
             {tab === 'settings' && <SettingsTab />}
@@ -183,7 +186,7 @@ function SidePanel({ setTab }: { setTab: (t: Tab) => void }) {
     ? v.timer.mode === 'split'
       ? '칠판 + 타이머 함께 보기'
       : '전체 화면 타이머'
-    : { blank: '빈 화면', board: '칠판', seating: '자리 배치', picker: '발표자 뽑기', widget: data.studentWidgetMain === 'board' ? '학생용 위젯 (큰 칸에 칠판)' : '학생용 위젯 (큰 칸에 시계)' }[v.base];
+    : { blank: '빈 화면', board: '칠판', seating: '자리 배치', picker: '발표자 뽑기', widget: data.studentWidgetMain === 'board' ? '학생용 위젯 (큰 칸에 칠판)' : '학생용 위젯 (큰 칸에 시계)', election: v.election?.phase === 'published' ? '선거 결과' : '선거 안내' }[v.base];
   const sw = runtime.studentWindow;
   return (
     <aside className="t-side">

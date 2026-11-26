@@ -7,12 +7,15 @@ import { eligibleStudents, pickStudents } from '../shared/picker';
 import { evaluateTick, findConflicts, keyToMs, validateSchedule } from '../shared/schedule';
 import { ALERT_LOOKAHEAD_MS, idleTimer, normalizeVolume, normalizeWarnFrom, pauseTimer, pendingAlerts, remainingMs, resetTimer, resumeTimer, setTimerMode, startTimer, tickTimer } from '../shared/timer';
 import { buildStudentView } from '../shared/studentView';
+import { Elections } from './elections';
 import { clamp, formatClock, formatDateTimeKo, localDateKey, newId } from '../shared/util';
 
 export interface Ports {
   persist(data: AppData): void;
   /** 지금 바로 디스크에 저장 (예약 실행 기록처럼 잃으면 안 되는 것) */
   persistNow(data: AppData): void;
+  /** 지금 바로 저장하고 성공 여부를 돌려줌 (선거 투표 접수). 없으면 persistNow 후 성공으로 간주(테스트용) */
+  persistStrict?(data: AppData): boolean;
   /** 학생 화면 표시 요청. inactive=true면 포커스를 빼앗지 않음. 표시하지 못하면 false */
   showStudent(opts: { inactive: boolean; reason: 'teacher' | 'schedule' | 'timer' }): boolean;
   hideStudent(): void;
@@ -36,9 +39,24 @@ export class Controller {
   private broadcastQueued = false;
   now: () => number = () => Date.now();
 
+  readonly elections: Elections;
+
   constructor(data: AppData, private ports: Ports, extra: { userDataPath: string; appVersion: string }) {
     this.data = data;
+    // eslint-disable-next-line @typescript-eslint/no-this-alias
+    const self = this;
+    this.elections = new Elections({
+      get data() {
+        return self.data;
+      },
+      now: () => self.now(),
+      notice: (level, message) => self.notice(level, message),
+      persistStrict: () => (ports.persistStrict ? ports.persistStrict(self.data) : (ports.persistNow(self.data), true)),
+      showStudent: () => ports.showStudent({ inactive: false, reason: 'teacher' }),
+      changed: (p) => self.changed(p),
+    });
     this.rt = {
+      election: this.elections.rt,
       timer: idleTimer({ durationMs: data.settings.lastTimerSec * 1000, activity: data.settings.timerActivity, sound: data.settings.timerSound, volume: data.settings.timerVolume, mode: data.settings.timerDisplayMode, warnFrom: data.settings.timerWarnFrom }),
       update: { status: 'idle', current: extra.appVersion },
       widget: { googleEvents: [], calStatus: {}, weather: null, meal: null, visible: false },
@@ -49,6 +67,7 @@ export class Controller {
       userDataPath: extra.userDataPath,
       appVersion: extra.appVersion,
     };
+    this.elections.recoverOnLoad();
   }
 
   // ---------- 공통 ----------
@@ -61,13 +80,14 @@ export class Controller {
   }
 
   studentView(): StudentView {
-    return buildStudentView(this.data, this.rt, this.now());
+    return { ...buildStudentView(this.data, this.rt, this.now()), election: this.elections.studentView() };
   }
 
   fullState(): FullState {
     // 구글 캘린더 주소(암호화 값 포함)는 화면으로 보내지 않는다
     const w = this.data.widget;
-    const data = { ...this.data, widget: { ...w, calendars: w.calendars.map((c) => ({ ...c, urlEnc: c.urlEnc ? 'saved' : '' })) } };
+    // 선거: 투표 중 득표·투표 토큰은 보내지 않고, PIN 해시도 보내지 않는다
+    const data = { ...this.data, widget: { ...w, calendars: w.calendars.map((c) => ({ ...c, urlEnc: c.urlEnc ? 'saved' : '' })) }, elections: this.elections.forTeacher(), electionPin: null };
     return {
       data,
       runtime: { ...this.rt, studentWindow: this.ports.studentWindowStatus(), displays: this.ports.displays(), now: this.now() },
@@ -250,6 +270,7 @@ export class Controller {
   private handle(a: Action): ActionResult | void {
     const c = this.cls;
     const now = this.now();
+    if (typeof a.type === 'string' && a.type.startsWith('election/')) return this.elections.handle(a) as ActionResult | void;
     switch (a.type) {
       // ----- 학급 -----
       case 'class/add': {

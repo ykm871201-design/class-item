@@ -1,8 +1,9 @@
 // 기본값과 저장 데이터 정규화·가져오기 검증
-import type { AppData, BoardStyle, ClassRoom, PickerConfig, Schedule, SeatingConfig, SeatLayout, Settings, SoundId, Student, StudentCardId, WidgetCardId, WidgetData } from './types';
+import type { AppData, BoardStyle, Election, ElectionCandidate, ClassRoom, PickerConfig, Schedule, SeatingConfig, SeatLayout, Settings, SoundId, Student, StudentCardId, WidgetCardId, WidgetData } from './types';
 import { cleanGroups, cleanLayout, suggestLayout, LIMITS } from './seating';
 import { clamp, newId } from './util';
 import { normalizeWarnFrom } from './timer';
+import { candidateColor, ELECTION_LIMITS } from './election';
 
 export const BOARD_THEMES: { name: string; color: string; bg: string }[] = [
   { name: '흰 바탕 · 검은 글씨', color: '#1f2328', bg: '#ffffff' },
@@ -135,6 +136,9 @@ export function defaultData(): AppData {
     studentBase: 'blank',
     studentWidgetMain: 'clock',
     widget: defaultWidget(),
+    elections: [],
+    electionPin: null,
+    electionShownId: null,
   };
 }
 
@@ -343,6 +347,47 @@ function normWidget(v: unknown): WidgetData {
   };
 }
 
+function normCandidate(v: unknown): ElectionCandidate | null {
+  if (!isObj(v) || typeof v.id !== 'string' || typeof v.studentId !== 'string' || typeof v.name !== 'string') return null;
+  const number = Math.max(1, Math.round(num(v.number, 1)));
+  return { id: v.id, studentId: v.studentId, name: v.name.slice(0, 20), number, color: color(v.color, candidateColor(number)) };
+}
+
+/** 선거 정규화. 예전 저장 파일에 선거 항목이 없어도 빈 목록으로 연다. 합계·인원은 음수·소수가 되지 않게 */
+function normElection(v: unknown): Election | null {
+  if (!isObj(v) || typeof v.id !== 'string' || typeof v.classId !== 'string') return null;
+  const candidates = uniqueIds(arr(v.candidates, normCandidate), 'ec_');
+  const ids = new Set(candidates.map((c) => c.id));
+  const tally: Record<string, number> = {};
+  if (isObj(v.tally)) for (const [k, x] of Object.entries(v.tally)) if (ids.has(k) && typeof x === 'number' && Number.isFinite(x) && x > 0) tally[k] = Math.round(x);
+  const phase = (['setup', 'voting', 'closed', 'published'] as const).find((p) => p === v.phase) ?? 'setup';
+  const ob = isObj(v.openBallot) && typeof v.openBallot.token === 'string' ? { token: v.openBallot.token, openedAt: num(v.openBallot.openedAt, 0) } : null;
+  const runoff = isObj(v.runoff) && typeof v.runoff.parentId === 'string' ? { parentId: v.runoff.parentId, priorWinners: arr(v.runoff.priorWinners, (x) => (typeof x === 'string' ? x : null)) } : undefined;
+  const ballots = Math.max(0, Math.round(num(v.ballots, 0)));
+  return {
+    id: v.id,
+    classId: v.classId,
+    title: str(v.title, '학급임원선거').slice(0, ELECTION_LIMITS.title),
+    position: str(v.position, '').slice(0, ELECTION_LIMITS.position),
+    seats: Math.round(num(v.seats, 1)),
+    voterLimit: Math.round(num(v.voterLimit, 25)),
+    maxChoices: Math.round(num(v.maxChoices, 1)),
+    candidates,
+    phase,
+    tally,
+    ballots,
+    abstain: Math.min(ballots, Math.max(0, Math.round(num(v.abstain, 0)))),
+    openBallot: phase === 'voting' ? ob : null,
+    receipts: arr(v.receipts, (x) => (typeof x === 'string' ? x : null)).slice(-(ELECTION_LIMITS.voters.max * 2)),
+    createdAt: num(v.createdAt, 0),
+    startedAt: typeof v.startedAt === 'number' ? v.startedAt : undefined,
+    closedAt: typeof v.closedAt === 'number' ? v.closedAt : undefined,
+    publishedAt: typeof v.publishedAt === 'number' ? v.publishedAt : undefined,
+    runoff,
+    runoffChildId: typeof v.runoffChildId === 'string' ? v.runoffChildId : undefined,
+  };
+}
+
 export function normalizeData(raw: unknown): AppData {
   const d = defaultData();
   if (!isObj(raw)) return d;
@@ -382,11 +427,16 @@ export function normalizeData(raw: unknown): AppData {
       timerActivity: str(s.timerActivity, ''),
       lastTimerSec: clamp(num(s.lastTimerSec, 300), 1, 180 * 60),
     },
-    studentBase: ['blank', 'board', 'seating', 'widget'].includes(raw.studentBase as string) ? (raw.studentBase as AppData['studentBase']) : 'blank',
+    studentBase: ['blank', 'board', 'seating', 'widget', 'election'].includes(raw.studentBase as string) ? (raw.studentBase as AppData['studentBase']) : 'blank',
     studentWidgetMain: raw.studentWidgetMain === 'board' ? 'board' : 'clock',
     widget: normWidget(raw.widget),
+    elections: uniqueIds(arr(raw.elections, normElection), 'el_'),
+    electionPin: isObj(raw.electionPin) && typeof raw.electionPin.salt === 'string' && typeof raw.electionPin.hash === 'string' && raw.electionPin.hash ? { salt: raw.electionPin.salt, hash: raw.electionPin.hash } : null,
+    electionShownId: typeof raw.electionShownId === 'string' ? raw.electionShownId : null,
   };
   if (!data.classes.some((c) => c.id === data.currentClassId)) data.currentClassId = data.classes[0].id;
+  // 학급이 없어진 선거는 버리지 않고 남겨 두되, 화면에 띄운 선거가 없으면 해제
+  if (data.electionShownId && !data.elections.some((e) => e.id === data.electionShownId)) data.electionShownId = null;
   return data;
 }
 

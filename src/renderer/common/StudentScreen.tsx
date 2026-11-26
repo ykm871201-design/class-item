@@ -1,7 +1,7 @@
 // 학생 화면 렌더링 (학생 창과 교사용 미리보기가 같은 코드를 사용)
 // 입력은 StudentView 뿐이며, 고정 자리 등 교사용 정보는 애초에 전달되지 않는다.
 import { useEffect, useMemo, useState } from 'react';
-import type { StudentBoardView, StudentPickerView, StudentSeatingView, StudentTimerView, StudentView, StudentWidgetView } from '../../shared/types';
+import type { StudentBoardView, StudentElectionView, StudentPickerView, StudentSeatingView, StudentTimerView, StudentView, StudentWidgetView } from '../../shared/types';
 import { BOARD_BACKGROUNDS } from '../../shared/defaults';
 import { koreanHolidays } from '../../shared/holidays';
 import { REGIONS, airGrade, buildPeriods, periodNow, weatherText } from '../../shared/widget';
@@ -27,6 +27,7 @@ export function StudentScreen({ view }: { view: StudentView }) {
   else if (view.base === 'board') content = <BoardArea board={view.board} w={size.w} h={size.h} refH={size.h} />;
   else if (view.base === 'seating' && view.seating) content = <SeatingBoard s={view.seating} />;
   else if (view.base === 'picker' && view.picker) content = <PickerBoard p={view.picker} />;
+  else if (view.base === 'election' && view.election) content = <ElectionBoard e={view.election} />;
   else content = <div className="st-blank" />;
   return (
     <div className="st-root" ref={ref} data-fonts={fontsReady ? '1' : '0'} data-base={view.base} data-timer={t ? t.mode : 'none'}>
@@ -479,5 +480,80 @@ function StudentWeather({ w }: { w: StudentWidgetView }) {
       </div>
       {air.text && <div className={`sw-air lv${air.level}`}>{air.text}</div>}
     </>
+  );
+}
+
+// ---------------- 학급임원선거 (TV) ----------------
+// 투표 중에는 안내·후보·전체 진행 인원만. 득표·순위는 교사가 결과를 공개한 뒤에만 (데이터 자체가 그때만 온다).
+function ElectionBoard({ e }: { e: StudentElectionView }) {
+  const head = (
+    <div className="st-elect-head">
+      <div className="st-elect-title">{e.title}</div>
+      <div className="st-elect-pos">
+        {e.position} · {e.seats}명 선출{e.runoff ? ' · 동점 재투표' : ''}
+      </div>
+    </div>
+  );
+  if (e.result) {
+    const r = e.result;
+    const max = Math.max(1, ...r.rows.map((x) => x.votes));
+    const status =
+      r.status === 'tie'
+        ? `당선 경계에서 동점입니다 — 동점 후보끼리 재투표로 ${r.seatsLeft}명을 더 뽑습니다`
+        : r.status === 'no-votes'
+          ? '투표한 학생이 없어 당선자를 정하지 않았습니다'
+          : r.status === 'all-abstain'
+            ? '모두 기권하여 당선자를 정하지 않았습니다'
+            : null;
+    return (
+      <div className="st-elect" data-testid="st-election" data-phase="published">
+        {head}
+        {e.priorWinners.length > 0 && <div className="st-elect-note">1차 투표 당선: {e.priorWinners.join(', ')}</div>}
+        <div className="st-elect-rows">
+          {r.rows.map((x) => (
+            <div key={x.number} className={`st-elect-row${x.elected ? ' won' : ''}`} style={{ ['--c' as any]: x.color }} data-result-num={x.number}>
+              <span className="st-elect-num">{x.number}</span>
+              <span className="st-elect-name">{x.name}</span>
+              <div className="st-elect-bar">
+                <div style={{ width: `${(x.votes / max) * 100}%` }} />
+              </div>
+              <span className="st-elect-votes">{x.votes}표</span>
+              {x.elected ? <span className="st-elect-badge won">당선</span> : x.tied ? <span className="st-elect-badge tie">동점·재투표</span> : <span />}
+            </div>
+          ))}
+        </div>
+        {status && <div className="st-elect-alert">{status}</div>}
+        <div className="st-elect-sum">
+          투표한 학생 {r.ballots}명 (기권 {r.abstain}명){e.maxChoices > 1 ? ` · 1인 최대 ${e.maxChoices}명 선택 · 후보 득표 합계 ${r.totalMarks}표` : ''}
+        </div>
+      </div>
+    );
+  }
+  const n = e.candidates.length;
+  const cols = n <= 3 ? n : n <= 6 ? 3 : 4;
+  return (
+    <div className="st-elect" data-testid="st-election" data-phase={e.phase}>
+      {head}
+      <div className="st-elect-cands" style={{ gridTemplateColumns: `repeat(${Math.max(1, cols)}, minmax(0, auto))` }}>
+        {e.candidates.map((c) => (
+          <div key={c.number} className="st-elect-cand" style={{ ['--c' as any]: c.color }}>
+            <span className="st-elect-num">{c.number}</span>
+            <span className="st-elect-name">{c.name}</span>
+          </div>
+        ))}
+      </div>
+      <div className="st-elect-note">
+        {e.phase === 'voting'
+          ? `교실 컴퓨터에서 한 명씩 비밀투표합니다 · ${e.maxChoices === 1 ? '한 명' : `최대 ${e.maxChoices}명`}을 고르세요`
+          : e.phase === 'closed'
+            ? '투표가 끝났습니다. 선생님이 결과를 확인하고 있습니다.'
+            : '곧 투표를 시작합니다.'}
+      </div>
+      {(e.phase === 'voting' || e.phase === 'closed') && (
+        <div className="st-elect-progress">
+          투표한 학생 {e.ballots} / {e.voterLimit}명
+        </div>
+      )}
+    </div>
   );
 }

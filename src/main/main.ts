@@ -6,6 +6,7 @@ import { Store } from './store';
 import { Controller, type Ports } from './controller';
 import { Updater } from './updater';
 import { WidgetManager } from './widget';
+import { VoteWindow, votePaths } from './voteWindow';
 import { resolveStudentDisplay, type DisplayInfo } from '../shared/displays';
 import { validateImport } from '../shared/defaults';
 import type { DisplayRef, Runtime } from '../shared/types';
@@ -30,6 +31,7 @@ let store: Store;
 let ctl: Controller;
 let updater: Updater;
 let widget: WidgetManager;
+let vote: VoteWindow;
 let teacherWin: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let quitting = false;
@@ -242,6 +244,7 @@ class StudentWindow {
   /** 학생 화면에서 Esc: 교사용 화면과 같은 모니터일 때만 숨기고 교사용 창으로 돌아감. 숨겼으면 true */
   escape(): boolean {
     if (!this.win || this.win.isDestroyed() || !this.win.isVisible()) return false;
+    if (vote?.active) return false; // 투표 화면이 떠 있는 동안은 교사용 창을 꺼내지 않음
     if (!this.sharesTeacherScreen()) return false; // 학생용 TV에 따로 떠 있으면 실수로 꺼지지 않게 무시
     diag('학생 화면에서 Esc → 학생 화면 숨김 (교사용 화면과 같은 모니터)');
     ctl.dispatch({ type: 'student/hide' });
@@ -347,7 +350,16 @@ function hideTeacherToTray(): void {
   ctl.changed(false);
 }
 
+/** 교사용 창 보이기. 투표 화면이 떠 있으면 교사용 창 대신 투표 화면을 앞으로 (관리 화면은 투표 화면의 교사 메뉴로 닫은 뒤에) */
 function showTeacher(): void {
+  if (vote?.active) {
+    vote.focus();
+    return;
+  }
+  revealTeacher();
+}
+
+function revealTeacher(): void {
   if (!teacherWin || teacherWin.isDestroyed()) createTeacher();
   if (teacherWin!.isMinimized()) teacherWin!.restore();
   teacherWin!.show();
@@ -384,7 +396,7 @@ function createTray(): void {
   tray.setToolTip('교실 도구 — 실행 중 (예약 감시 중)');
   const menu = () =>
     Menu.buildFromTemplate([
-      { label: '교사용 화면 열기', click: showTeacher },
+      { label: vote?.active ? '투표 화면 실행 중 (교사 메뉴: 투표 화면의 ‘선생님’ 버튼)' : '교사용 화면 열기', click: showTeacher },
       { label: '바탕화면 위젯 보이기/숨기기 (Ctrl+Alt+W)', click: () => widget.toggle() },
       { label: student.status().visible ? '학생 화면 숨기기' : '학생 화면 보이기', click: () => (student.status().visible ? ctl.dispatch({ type: 'student/hide' }) : ctl.dispatch({ type: 'student/show' })) },
       { type: 'separator' },
@@ -406,6 +418,10 @@ function init(): void {
       store.save(d);
       store.flush();
     },
+    persistStrict: (d) => {
+      store.save(d);
+      return store.flush();
+    },
     // 학생 창은 키보드 입력이 필요 없으므로 항상 포커스를 빼앗지 않고 표시한다
     showStudent: () => student.show(true),
     hideStudent: () => student.hide(),
@@ -422,6 +438,7 @@ function init(): void {
       widget?.send('state', state);
       student.send(state.studentView);
       student.syncTopmost();
+      vote?.push();
     },
     studentWindowStatus: () => student.status(),
     displays: () => {
@@ -452,20 +469,33 @@ function init(): void {
   // 자동 실행 설정을 OS 상태와 맞춤
   if (process.platform === 'win32' && app.isPackaged) app.setLoginItemSettings({ openAtLogin: ctl.data.settings.autoLaunch, args: ['--hidden'] });
 
+  vote = new VoteWindow({
+    ctl: () => ctl,
+    ...votePaths(__dirname),
+    icon: asset('icon.png'),
+    log: diag,
+    teacherWindow: () => teacherWin,
+    studentDisplayId: () => student.resolve()?.id ?? null,
+    restoreTeacher: revealTeacher,
+    isE2E,
+  });
   registerIpc();
   createTeacher();
   createTray();
 
   screen.on('display-added', () => {
     student.onDisplaysChanged('added');
+    vote.onDisplaysChanged('added');
     ctl.changed(false);
   });
   screen.on('display-removed', () => {
     student.onDisplaysChanged('removed');
+    vote.onDisplaysChanged('removed');
     ctl.changed(false);
   });
   screen.on('display-metrics-changed', () => {
     student.onDisplaysChanged('changed');
+    vote.onDisplaysChanged('changed');
     ctl.changed(false);
   });
 
@@ -513,7 +543,9 @@ function init(): void {
   widget.start();
   if (ctl.data.widget.showOnStartup && !isE2E) widget.show();
   try {
-    globalShortcut.register('CommandOrControl+Alt+W', () => widget.toggle());
+    globalShortcut.register('CommandOrControl+Alt+W', () => {
+      if (!vote.active) widget.toggle();
+    });
   } catch {
     /* 다른 프로그램이 쓰는 단축키면 무시 */
   }
@@ -528,13 +560,17 @@ function init(): void {
   if (ctl.data.settings.showStudentOnStartup && student.resolve()) student.show(true);
   ctl.changed(false);
 
-  if (isE2E) (globalThis as any).__ct = { ctl, student, get teacherWin() { return teacherWin; }, soundLog, store, updater, widget };
+  if (isE2E) (globalThis as any).__ct = { ctl, student, get teacherWin() { return teacherWin; }, soundLog, store, updater, widget, vote };
 }
 
 const soundLog: { runId: string; sound: string; volume: number; at: number; due?: number }[] = [];
 
 app.on('before-quit', () => {
   quitting = true;
+  if (vote?.active) {
+    ctl.elections.cancelOpenBallot();
+    vote.destroy();
+  }
   if (store && ctl) store.save(ctl.data);
   store?.flush();
 });
@@ -554,6 +590,9 @@ function fromTeacher(e: Electron.IpcMainInvokeEvent): boolean {
   const s = e.sender;
   return (!!teacherWin && !teacherWin.isDestroyed() && s === teacherWin.webContents) || (!!widget?.win && !widget.win.isDestroyed() && s === widget.win.webContents);
 }
+function fromVote(e: Electron.IpcMainInvokeEvent): boolean {
+  return !!vote?.win && !vote.win.isDestroyed() && e.sender === vote.win.webContents;
+}
 function fromStudent(e: Electron.IpcMainInvokeEvent): boolean {
   return !!student.win && !student.win.isDestroyed() && e.sender === student.win.webContents;
 }
@@ -570,6 +609,11 @@ function registerIpc(): void {
   // 학생 화면 안에서 받은 Esc (before-input-event로 처리되지 않은 경우의 보조 경로)
   ipcMain.handle('student:escape', guard(fromStudent, () => student.escape()));
   ipcMain.handle('dispatch', guard(fromTeacher, (_e, action) => ctl.dispatch(action)));
+  // ----- 투표 창 (학생이 누르는 화면): 후보·투표 기회만 받고, 제출·교사 메뉴(PIN)만 보낼 수 있다 -----
+  ipcMain.handle('vote:getView', guard(fromVote, () => vote.view()));
+  ipcMain.handle('vote:submit', guard(fromVote, (_e, p: { token?: unknown; choices?: unknown; abstain?: unknown }) => vote.submit(p?.token, p?.choices, p?.abstain)));
+  ipcMain.handle('vote:unlock', guard(fromVote, (_e, pin: unknown) => vote.unlock(pin)));
+  ipcMain.handle('vote:admin', guard(fromVote, (_e, action: unknown) => vote.adminAction(action)));
   ipcMain.handle('dialog:confirm', guard(fromTeacher, async (_e, { message, detail, ok, cancel }) => {
     const r = await dialog.showMessageBox(teacherWin!, { type: 'question', title: '교실 도구', message, detail, buttons: [ok ?? '확인', cancel ?? '취소'], defaultId: 0, cancelId: 1, noLink: true });
     return r.response === 0;
@@ -671,16 +715,27 @@ function registerIpc(): void {
         showTeacher();
         if (a.tab) teacherWin?.webContents.send('nav', a.tab);
         return { ok: true };
+      // ----- 학급임원선거: 투표 화면 -----
+      case 'voteCheck': {
+        const t = vote.checkTarget();
+        return t.ok ? { ok: true, single: t.single, displays: screen.getAllDisplays().length } : t;
+      }
+      case 'voteOpen': {
+        if (!a.displayConfirmed) return { ok: false, error: '화면 확인(복제 모드 해제)을 먼저 체크해 주세요.' };
+        return vote.open(String(a.id ?? ''));
+      }
       case 'openDataFolder':
         shell.openPath(app.getPath('userData'));
         return { ok: true };
       case 'export': {
+        if (ctl.elections.votingElection()) return { ok: false, error: '선거 투표가 진행 중일 때는 데이터를 내보낼 수 없습니다. 투표를 마감한 뒤 내보내 주세요.' };
         const r = await dialog.showSaveDialog(teacherWin!, { title: '데이터 내보내기', defaultPath: path.join(app.getPath('documents'), `교실도구-데이터-${localDateKey(Date.now()).replace(/-/g, '')}.json`), filters: [{ name: '교실 도구 데이터', extensions: ['json'] }] });
         if (r.canceled || !r.filePath) return { ok: false, canceled: true };
-        fs.writeFileSync(r.filePath, JSON.stringify({ app: 'classroom-tools', version: 1, exportedAt: new Date().toISOString(), data: ctl.data }, null, 1), 'utf8');
+        fs.writeFileSync(r.filePath, JSON.stringify({ app: 'classroom-tools', version: 1, exportedAt: new Date().toISOString(), data: { ...ctl.data, electionPin: null } }, null, 1), 'utf8');
         return { ok: true, path: r.filePath };
       }
       case 'import': {
+        if (ctl.elections.votingElection() || vote.active) return { ok: false, error: '선거 투표가 진행 중일 때는 데이터를 가져올 수 없습니다. 투표를 마감한 뒤 가져와 주세요.' };
         const r = await dialog.showOpenDialog(teacherWin!, { title: '데이터 가져오기', properties: ['openFile'], filters: [{ name: '교실 도구 데이터', extensions: ['json'] }] });
         if (r.canceled || !r.filePaths[0]) return { ok: false, canceled: true };
         let raw: unknown;
@@ -708,7 +763,9 @@ function registerIpc(): void {
         v.data.settings = { ...v.data.settings, studentDisplay: keep.studentDisplay, autoLaunch: keep.autoLaunch, closeToTrayNoticeShown: keep.closeToTrayNoticeShown };
         for (const s of v.data.schedules) s.activeSince = now;
         v.data.lastScheduleCheckAt = now;
+        v.data.electionPin = ctl.data.electionPin; // 선거 PIN은 파일로 옮기지 않고 이 PC의 것을 유지
         ctl.data = v.data;
+        ctl.elections.recoverOnLoad();
         ctl.rt.seatingReveal = null;
         ctl.rt.pickerReveal = null;
         ctl.changed(true);
