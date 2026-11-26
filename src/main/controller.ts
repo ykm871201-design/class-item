@@ -5,7 +5,7 @@ import { displayNames, isAway, mergeRoster, parseRosterText, MAX_STUDENTS } from
 import { resultProblems, activeSeats, cleanGroups, cleanLayout, cycleGender, disabledKey, disabledList, drawSeating, FIXED_ISSUE_TEXT, genderKey, genderPattern, type GenderPattern, precheckSeating, reconcileAssignment, seatExists, seatLabel, setFixed, suggestLayout, validateFixed } from '../shared/seating';
 import { eligibleStudents, pickStudents } from '../shared/picker';
 import { evaluateTick, findConflicts, keyToMs, validateSchedule } from '../shared/schedule';
-import { idleTimer, normalizeWarnFrom, pauseTimer, pendingAlerts, remainingMs, resetTimer, resumeTimer, setTimerMode, startTimer, tickTimer } from '../shared/timer';
+import { ALERT_LOOKAHEAD_MS, idleTimer, normalizeVolume, normalizeWarnFrom, pauseTimer, pendingAlerts, remainingMs, resetTimer, resumeTimer, setTimerMode, startTimer, tickTimer } from '../shared/timer';
 import { buildStudentView } from '../shared/studentView';
 import { clamp, formatClock, formatDateTimeKo, localDateKey, newId } from '../shared/util';
 
@@ -17,7 +17,7 @@ export interface Ports {
   showStudent(opts: { inactive: boolean; reason: 'teacher' | 'schedule' | 'timer' }): boolean;
   hideStudent(): void;
   applyTopmost(on: boolean): void;
-  playSound(p: { runId: string; sound: string; volume: number }): void;
+  playSound(p: { runId: string; sound: string; volume: number; at?: number }): void;
   notify(title: string, body: string): void;
   broadcast(state: FullState): void;
   studentWindowStatus(): Runtime['studentWindow'];
@@ -26,6 +26,9 @@ export interface Ports {
 
 export type Action = { type: string; [k: string]: any };
 export type ActionResult = { ok: boolean; error?: string; [k: string]: any };
+
+/** ‘끌 때까지 다시 울리기’를 켰을 때 종료 알림음 반복 간격 */
+export const END_REPEAT_MS = 20_000;
 
 export class Controller {
   data: AppData;
@@ -108,19 +111,35 @@ export class Controller {
 
   tick(): void {
     const now = this.now();
-    // 종료 예고음: 정한 시점부터 끝날 때까지 1초마다
-    const al = pendingAlerts(this.rt.timer, now);
+    // 종료 예고음: 정한 시점부터 끝날 때까지 1초마다 (조금 미리 알려 화면의 초가 바뀌는 순간에 맞춰 울림)
+    const al = pendingAlerts(this.rt.timer, now, ALERT_LOOKAHEAD_MS);
     if (al.play.length) {
       const t = this.rt.timer;
       this.rt.timer = { ...t, alerted: [...t.alerted.slice(-400), ...al.play.map((x) => x.key)] };
-      if (t.volume > 0) for (const x of al.play) this.ports.playSound({ runId: `${t.runId}-${x.key}`, sound: x.kind, volume: t.volume });
+      if (t.warnVolume > 0) for (const x of al.play) this.ports.playSound({ runId: `${t.runId}-${x.key}`, sound: x.kind, volume: t.warnVolume, at: x.at });
+    }
+    // 종료 알림음도 미리 알려 마지막 예고음 1초 뒤 정확히 울리게 한다
+    const et = this.rt.timer;
+    if (et.status === 'running' && et.endAt - now <= ALERT_LOOKAHEAD_MS && !et.alerted.includes('end')) {
+      this.rt.timer = { ...et, alerted: [...et.alerted, 'end'] };
+      if (et.sound !== 'none' && et.volume > 0) this.ports.playSound({ runId: et.runId, sound: et.sound, volume: et.volume, at: et.endAt });
     }
     // 타이머 종료 감지
     const r = tickTimer(this.rt.timer, now);
     if (r.justFinished) {
       this.rt.timer = r.timer;
-      if (r.timer.sound !== 'none' && r.timer.volume > 0) this.ports.playSound({ runId: r.timer.runId, sound: r.timer.sound, volume: r.timer.volume });
+      if (!r.timer.alerted.includes('end') && r.timer.sound !== 'none' && r.timer.volume > 0) this.ports.playSound({ runId: r.timer.runId, sound: r.timer.sound, volume: r.timer.volume, at: r.timer.endAt });
       this.changed(false);
+    }
+    // 종료 상태는 교사가 닫을 때까지 유지. 설정에 따라 알림음을 일정 간격으로 다시 울림
+    const ft = this.rt.timer;
+    if (ft.status === 'finished' && ft.finishedAt && this.data.settings.timerEndRepeat && ft.sound !== 'none' && ft.volume > 0) {
+      const n = Math.floor((now - ft.finishedAt) / END_REPEAT_MS);
+      const key = 'r' + n;
+      if (n >= 1 && !ft.alerted.includes(key)) {
+        this.rt.timer = { ...ft, alerted: [...ft.alerted.slice(-400), key] };
+        this.ports.playSound({ runId: `${ft.runId}-${key}`, sound: ft.sound, volume: ft.volume });
+      }
     }
     // 예약 감시 (창 표시 여부와 무관)
     this.checkSchedules(now);
@@ -182,7 +201,7 @@ export class Controller {
       const what = prev.source === 'schedule' ? `예약 타이머 ‘${this.data.schedules.find((x) => x.id === prev.scheduleId)?.name ?? ''}’` : '수동 타이머';
       this.log('replaced', `${what}${prev.activity ? `(${prev.activity})` : ''} — 남은 ${formatClock(remainingMs(prev, now))}을 중단하고 ‘${s.name}’ 예약 타이머로 전환했습니다.`, { scheduleId: s.id, occurrence: key, acknowledged: false });
     }
-    this.rt.timer = startTimer({ durationMs: s.durationSec * 1000, activity: s.activity, sound: s.sound, volume: s.volume, mode: s.displayMode, source: 'schedule', scheduleId: s.id, warnFrom: s.warnFrom ?? 0 }, now);
+    this.rt.timer = startTimer({ durationMs: s.durationSec * 1000, activity: s.activity, sound: s.sound, volume: s.volume, mode: s.displayMode, source: 'schedule', scheduleId: s.id, warnFrom: s.warnFrom ?? 0, warnVolume: s.warnVolume ?? 80 }, now);
     const shown = this.showTimerOnStudent('schedule');
     this.log('fired', `‘${s.name}’ 예약 타이머(${formatClock(s.durationSec * 1000)})를 시작했습니다.`, { scheduleId: s.id, occurrence: key });
     if (!shown) {
@@ -373,8 +392,9 @@ export class Controller {
         if (!Number.isFinite(sec)) return { ok: false, error: '시간을 확인해 주세요.' };
         const mode: TimerDisplayMode = a.mode === 'full' ? 'full' : 'split';
         const warnFrom = normalizeWarnFrom(a.warnFrom ?? this.data.settings.timerWarnFrom);
-        this.rt.timer = startTimer({ durationMs: sec * 1000, activity: String(a.activity ?? '').slice(0, 30), sound: a.sound ?? 'chime', volume: clamp(Number(a.volume ?? 70), 0, 100), mode, source: 'manual', warnFrom }, now);
-        Object.assign(this.data.settings, { lastTimerSec: sec, timerActivity: this.rt.timer.activity, timerSound: this.rt.timer.sound, timerVolume: this.rt.timer.volume, timerDisplayMode: mode, timerWarnFrom: warnFrom });
+        const warnVolume = normalizeVolume(a.warnVolume ?? this.data.settings.timerWarnVolume, 80);
+        this.rt.timer = startTimer({ durationMs: sec * 1000, activity: String(a.activity ?? '').slice(0, 30), sound: a.sound ?? 'chime', volume: clamp(Number(a.volume ?? 70), 0, 100), mode, source: 'manual', warnFrom, warnVolume }, now);
+        Object.assign(this.data.settings, { lastTimerSec: sec, timerActivity: this.rt.timer.activity, timerSound: this.rt.timer.sound, timerVolume: this.rt.timer.volume, timerDisplayMode: mode, timerWarnFrom: warnFrom, timerWarnVolume: warnVolume });
         if (!this.showTimerOnStudent('timer')) this.notice('warn', '학생용 디스플레이가 없어 타이머는 교사용 화면에서만 진행됩니다.');
         return;
       }
@@ -407,6 +427,13 @@ export class Controller {
       case 'timer/defaults':
         Object.assign(this.data.settings, pick(a.patch ?? {}, ['timerSound', 'timerVolume', 'timerActivity', 'lastTimerSec', 'timerDisplayMode']));
         if (a.patch?.timerWarnFrom !== undefined) this.data.settings.timerWarnFrom = normalizeWarnFrom(a.patch.timerWarnFrom);
+        if (a.patch?.timerEndRepeat !== undefined) this.data.settings.timerEndRepeat = !!a.patch.timerEndRepeat;
+        if (a.patch?.timerWarnVolume !== undefined) {
+          const v = normalizeVolume(a.patch.timerWarnVolume, this.data.settings.timerWarnVolume);
+          this.data.settings.timerWarnVolume = v;
+          // 진행 중인 수동 타이머에도 바로 적용 (예약 타이머는 예약에 저장한 크기)
+          if (this.rt.timer.status !== 'idle' && this.rt.timer.source === 'manual') this.rt.timer = { ...this.rt.timer, warnVolume: v };
+        }
         return;
 
       // ----- 예약 -----
@@ -416,6 +443,7 @@ export class Controller {
         const sched: Schedule = { ...s, id: existing ? s.id : newId('sch_'), createdAt: existing?.createdAt ?? now, activeSince: now };
         sched.days = [...new Set(sched.days)].sort();
         sched.warnFrom = normalizeWarnFrom(sched.warnFrom);
+        sched.warnVolume = normalizeVolume(sched.warnVolume, 80);
         const errors = validateSchedule(sched, now);
         if (errors.length) return { ok: false, error: errors.join('\n') };
         const conflicts = findConflicts(sched, this.data.schedules);

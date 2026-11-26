@@ -5,7 +5,8 @@ import { ScaledStudentScreen } from '../common/StudentScreen';
 import { StateCtx, act, api, dismissToast, toast, useAppState, useToasts } from './api';
 import { playSound } from './sound';
 import { nextRun } from '../../shared/schedule';
-import { formatDateTimeKo } from '../../shared/util';
+import { formatClock, formatDateTimeKo } from '../../shared/util';
+import { useNow } from '../common/hooks';
 import { BoardTab } from './BoardTab';
 import { TimerTab } from './TimerTab';
 import { ScheduleTab } from './ScheduleTab';
@@ -47,7 +48,7 @@ function App() {
       if (played.current.has(p.runId)) return;
       played.current.add(p.runId);
       (window.__soundPlays ||= []).push(p.runId);
-      playSound(p.sound as SoundId | 'tick' | 'tick-urgent', p.volume);
+      playSound(p.sound as SoundId | 'tick', p.volume, p.at);
     });
     return () => {
       off1();
@@ -80,6 +81,7 @@ function App() {
             ))}
           </nav>
           <main className="t-main">
+            <TimerFinishedBanner />
             {tab === 'board' && <BoardTab />}
             {tab === 'timer' && <TimerTab />}
             {tab === 'schedule' && <ScheduleTab />}
@@ -94,6 +96,25 @@ function App() {
         <Toasts />
       </div>
     </StateCtx.Provider>
+  );
+}
+
+/** 타이머가 끝나면 어느 탭에 있든 닫을 때까지 보이는 알림 띠 */
+function TimerFinishedBanner() {
+  const { runtime } = useAppState();
+  const t = runtime.timer;
+  const now = useNow(1000, t.status === 'finished');
+  if (t.status !== 'finished') return null;
+  const ago = t.finishedAt ? formatClock(Math.max(0, now - t.finishedAt)) : '';
+  return (
+    <div className="alert err timer-finished-banner" data-testid="timer-finished-banner">
+      <b>⏰ 타이머가 끝났습니다{t.activity ? ` (${t.activity})` : ''}</b>
+      {ago && <span className="small"> · 끝난 지 {ago}</span>}
+      <span className="small">{t.shown ? ' · 학생 화면에 ‘시간이 끝났어요!’가 닫을 때까지 그대로 보입니다.' : ''}</span>
+      <button className="btn sm danger" style={{ marginLeft: 'auto' }} onClick={() => act('timer/close')}>
+        종료 화면 닫기
+      </button>
+    </div>
   );
 }
 

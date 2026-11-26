@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { pendingAlerts, startTimer, pauseTimer, resumeTimer } from '../src/shared/timer';
+import { ALERT_LOOKAHEAD_MS, pendingAlerts, startTimer, pauseTimer, resumeTimer } from '../src/shared/timer';
 import { compareVersions } from '../src/shared/version';
 import { Controller, type Ports } from '../src/main/controller';
 import { defaultData, normalizeData } from '../src/shared/defaults';
@@ -18,13 +18,27 @@ function simulate(t: ReturnType<typeof start>, until: number, from = 0) {
 }
 
 describe('종료 예고음 (정한 시점부터 끝날 때까지 1초마다)', () => {
-  it('5분 타이머 · 1분 전부터 → 남은 60초부터 1초마다 60번, 마지막 10초는 높은 소리', () => {
+  it('5분 타이머 · 1분 전부터 → 남은 60초부터 1초마다 60번, 끝까지 같은 소리', () => {
     const p = simulate(start(300, 60), 300_000);
     expect(p.length).toBe(60);
     expect(p[0]).toBe('s60:tick');
-    expect(p.filter((x) => x.endsWith(':tick-urgent')).length).toBe(10);
-    expect(p[p.length - 1]).toBe('s1:tick-urgent');
+    expect(p.every((x) => x.endsWith(':tick'))).toBe(true);
+    expect(p[p.length - 1]).toBe('s1:tick');
     expect(new Set(p).size).toBe(60); // 같은 초에 두 번 울리지 않음
+  });
+  it('미리 알림(lookahead): 감시 주기가 들쭉날쭉해도 울릴 시각은 정확히 1초 간격', () => {
+    let t = start(30, 10);
+    const ats: number[] = [];
+    // 250ms ± 지터로 감시
+    for (let now = 0, k = 0; now <= 30_000; now += 180 + ((k++ * 97) % 150)) {
+      const { play } = pendingAlerts(t, now, ALERT_LOOKAHEAD_MS);
+      for (const x of play) {
+        expect(x.at).toBeGreaterThanOrEqual(now); // 과거로 예약하지 않음
+        ats.push(x.at);
+      }
+      t = { ...t, alerted: [...t.alerted, ...play.map((x) => x.key)] };
+    }
+    expect(ats).toEqual([20_000, 21_000, 22_000, 23_000, 24_000, 25_000, 26_000, 27_000, 28_000, 29_000]);
   });
   it('예고음 없음이면 울리지 않음', () => {
     expect(simulate(start(60, 0), 60_000).length).toBe(0);
@@ -66,6 +80,59 @@ describe('컨트롤러: 예고음 → 알림음 순서와 횟수', () => {
     expect(sounds.filter((x) => x === 'bell').length).toBe(1);
     expect(sounds[sounds.length - 1]).toBe('bell');
     expect(ctl.data.settings.timerWarnFrom).toBe(10); // 다음 타이머 기본값으로 기억
+  });
+  function mk() {
+    const sounds: { sound: string; volume: number; at?: number }[] = [];
+    const ports: Ports = {
+      persist: () => {}, persistNow: () => {}, showStudent: () => true, hideStudent: () => {}, applyTopmost: () => {}, notify: () => {}, broadcast: () => {},
+      playSound: (p) => sounds.push(p), studentWindowStatus: () => ({ visible: true, mode: 'display', fullscreen: true, displayAvailable: true, displayLabel: '', alwaysOnTop: true }), displays: () => [],
+    };
+    const ctl = new Controller(defaultData(), ports, { userDataPath: '', appVersion: 't' });
+    return { ctl, sounds };
+  }
+  it('예고음 크기는 따로: 종료 알림음 크기와 별개로 저장·적용, 진행 중에도 바꿀 수 있음', () => {
+    const { ctl, sounds } = mk();
+    let now = 1_000_000;
+    ctl.now = () => now;
+    ctl.dispatch({ type: 'timer/start', durationSec: 20, activity: '', sound: 'bell', volume: 30, mode: 'split', warnFrom: 10, warnVolume: 95 });
+    expect(ctl.data.settings.timerWarnVolume).toBe(95);
+    for (; now <= 1_000_000 + 14_000; now += 250) ctl.tick();
+    ctl.dispatch({ type: 'timer/defaults', patch: { timerWarnVolume: 40 } });
+    for (; now <= 1_000_000 + 22_000; now += 250) ctl.tick();
+    const ticks = sounds.filter((x) => x.sound === 'tick');
+    expect(ticks.length).toBe(10);
+    expect(ticks.slice(0, 4).every((x) => x.volume === 95)).toBe(true);
+    expect(ticks.slice(-5).every((x) => x.volume === 40)).toBe(true);
+    const bell = sounds.filter((x) => x.sound === 'bell');
+    expect(bell.length).toBe(1);
+    expect(bell[0].volume).toBe(30);
+    expect(bell[0].at).toBe(1_000_000 + 20_000); // 마지막 예고음 1초 뒤 정확히
+    expect(ticks[ticks.length - 1].at).toBe(1_000_000 + 19_000);
+  });
+  it('끝난 상태는 닫을 때까지 유지 · 반복 설정이면 20초마다 다시 울림, 닫으면 멈춤', () => {
+    const { ctl, sounds } = mk();
+    let now = 1_000_000;
+    ctl.now = () => now;
+    ctl.dispatch({ type: 'timer/defaults', patch: { timerEndRepeat: true } });
+    ctl.dispatch({ type: 'timer/start', durationSec: 5, activity: '', sound: 'chime', volume: 60, mode: 'split', warnFrom: 0 });
+    for (; now <= 1_000_000 + 5_000 + 65_000; now += 250) ctl.tick();
+    expect(ctl.rt.timer.status).toBe('finished');
+    expect(ctl.studentView().timer?.status).toBe('finished'); // 학생 화면에도 그대로
+    expect(sounds.filter((x) => x.sound === 'chime').length).toBe(4); // 종료 1번 + 20·40·60초 뒤
+    ctl.dispatch({ type: 'timer/close' });
+    for (; now <= 1_000_000 + 200_000; now += 250) ctl.tick();
+    expect(sounds.filter((x) => x.sound === 'chime').length).toBe(4);
+    expect(ctl.studentView().timer).toBeNull();
+  });
+  it('반복 설정이 꺼져 있으면 끝난 화면은 유지하되 소리는 한 번만', () => {
+    const { ctl, sounds } = mk();
+    let now = 1_000_000;
+    ctl.now = () => now;
+    ctl.dispatch({ type: 'timer/start', durationSec: 5, activity: '', sound: 'chime', volume: 60, mode: 'split', warnFrom: 0 });
+    for (; now <= 1_000_000 + 600_000; now += 1000) ctl.tick();
+    expect(ctl.rt.timer.status).toBe('finished');
+    expect(ctl.studentView().timer?.status).toBe('finished');
+    expect(sounds.filter((x) => x.sound === 'chime').length).toBe(1);
   });
   it('예약에 저장한 예고음 설정이 저장·복원됨', () => {
     const d = defaultData();

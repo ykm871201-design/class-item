@@ -611,7 +611,7 @@ function TimetableCard() {
 function ToolsCard() {
   const { data, runtime } = useAppState();
   const st = data.settings;
-  const quick = (m: number) => act('timer/start', { durationSec: m * 60, activity: st.timerActivity, sound: st.timerSound, volume: st.timerVolume, mode: st.timerDisplayMode, warnFrom: st.timerWarnFrom });
+  const quick = (m: number) => act('timer/start', { durationSec: m * 60, activity: st.timerActivity, sound: st.timerSound, volume: st.timerVolume, mode: st.timerDisplayMode, warnFrom: st.timerWarnFrom, warnVolume: st.timerWarnVolume });
   const tools: { ico: string; label: string; run: () => void }[] = [
     { ico: '⏱️', label: '타이머', run: () => openTeacher('timer') },
     { ico: '1', label: '1분', run: () => quick(1) },

@@ -8,29 +8,34 @@ function ac(): AudioContext {
   return ctx;
 }
 
-function tone(c: AudioContext, out: AudioNode, freq: number, start: number, dur: number, type: OscillatorType, peak: number) {
+function tone(c: AudioContext, out: AudioNode, freq: number, start: number, dur: number, type: OscillatorType, peak: number, attack = 0.015) {
   const o = c.createOscillator();
   const g = c.createGain();
   o.type = type;
   o.frequency.value = freq;
   g.gain.setValueAtTime(0.0001, start);
-  g.gain.exponentialRampToValueAtTime(peak, start + 0.015);
+  g.gain.exponentialRampToValueAtTime(peak, start + attack);
   g.gain.exponentialRampToValueAtTime(0.0001, start + dur);
   o.connect(g).connect(out);
   o.start(start);
   o.stop(start + dur + 0.05);
 }
 
-/** 한 번 재생. 반환값: 재생 길이(초) */
-export type AnySound = SoundId | 'tick' | 'tick-urgent';
+export type AnySound = SoundId | 'tick';
 
-export function playSound(id: AnySound, volume: number): number {
+/**
+ * 한 번 재생. 반환값: 재생 길이(초)
+ * at(epoch ms)을 주면 그 시각에 맞춰 오디오 시계로 예약 재생한다 (예고음 간격이 고르게 들리도록).
+ * 이미 지난 시각이면 바로 재생.
+ */
+export function playSound(id: AnySound, volume: number, at?: number): number {
   if (id === 'none' || volume <= 0) return 0;
   const c = ac();
   const master = c.createGain();
-  master.gain.value = Math.min(1, Math.max(0, volume / 100)) * 0.9;
+  master.gain.value = Math.min(1, Math.max(0, volume / 100)) * (id === 'tick' ? 1 : 0.9);
   master.connect(c.destination);
-  const t = c.currentTime + 0.05;
+  const delay = at ? Math.min(2, Math.max(0, (at - Date.now()) / 1000)) : 0;
+  const t = c.currentTime + 0.02 + delay;
   switch (id) {
     case 'chime': {
       // 딩-동-댕
@@ -54,14 +59,9 @@ export function playSound(id: AnySound, volume: number): number {
       return 1.5;
     }
     case 'tick': {
-      // 종료 예고음: 1초마다 부드러운 째깍
-      tone(c, master, 880, t, 0.09, 'triangle', 0.28);
-      return 0.1;
-    }
-    case 'tick-urgent': {
-      // 마지막 10초: 더 높고 또렷한 삑
-      tone(c, master, 1318.5, t, 0.16, 'square', 0.16);
-      tone(c, master, 1318.5, t, 0.16, 'sine', 0.3);
+      // 종료 예고음: 매번 똑같은 맑은 ‘띡’ (높이·길이·크기 일정, 마지막까지 같은 소리)
+      tone(c, master, 1046.5, t, 0.16, 'sine', 0.85, 0.005);
+      tone(c, master, 2093, t, 0.07, 'sine', 0.12, 0.005);
       return 0.2;
     }
     case 'beep': {

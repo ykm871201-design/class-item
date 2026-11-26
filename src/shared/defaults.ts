@@ -40,6 +40,8 @@ export function defaultSettings(): Settings {
     timerVolume: 70,
     timerDisplayMode: 'split',
     timerWarnFrom: 0,
+    timerWarnVolume: 80,
+    timerEndRepeat: false,
     timerActivity: '',
     lastTimerSec: 300,
   };
@@ -286,6 +288,7 @@ function normSchedule(v: unknown): Schedule | null {
     volume: clamp(num(v.volume, 70), 0, 100),
     displayMode: v.displayMode === 'full' ? 'full' : 'split',
     warnFrom: normalizeWarnFrom(v.warnFrom),
+    warnVolume: clamp(num(v.warnVolume, 80), 0, 100),
     createdAt: num(v.createdAt, Date.now()),
     activeSince: num(v.activeSince, num(v.createdAt, 0)),
   };
@@ -374,6 +377,8 @@ export function normalizeData(raw: unknown): AppData {
       timerVolume: clamp(num(s.timerVolume, ds.timerVolume), 0, 100),
       timerDisplayMode: s.timerDisplayMode === 'full' ? 'full' : 'split',
       timerWarnFrom: normalizeWarnFrom(s.timerWarnFrom),
+      timerWarnVolume: clamp(num(s.timerWarnVolume, ds.timerWarnVolume), 0, 100),
+      timerEndRepeat: bool(s.timerEndRepeat, false),
       timerActivity: str(s.timerActivity, ''),
       lastTimerSec: clamp(num(s.lastTimerSec, 300), 1, 180 * 60),
     },

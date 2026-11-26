@@ -16,6 +16,7 @@ export function idleTimer(prev?: Partial<TimerState>): TimerState {
     source: 'manual',
     shown: false,
     warnFrom: prev?.warnFrom ?? 0,
+    warnVolume: prev?.warnVolume ?? 80,
     alerted: [],
     runId: newId('t_'),
   };
@@ -36,6 +37,7 @@ export interface StartOptions {
   source: 'manual' | 'schedule';
   scheduleId?: string;
   warnFrom?: number;
+  warnVolume?: number;
 }
 
 export function startTimer(o: StartOptions, now: number): TimerState {
@@ -52,6 +54,7 @@ export function startTimer(o: StartOptions, now: number): TimerState {
     scheduleId: o.scheduleId,
     shown: true,
     warnFrom: normalizeWarnFrom(o.warnFrom),
+    warnVolume: normalizeVolume(o.warnVolume, 80),
     alerted: [],
     runId: newId('t_'),
   };
@@ -94,8 +97,10 @@ export const WARN_FROM_CHOICES: { sec: number; label: string }[] = [
   { sec: 10, label: '10초 전부터' },
 ];
 
-/** 마지막 이 시간(초) 동안은 더 높은 소리 */
-export const URGENT_SEC = 10;
+export function normalizeVolume(v: unknown, fallback: number): number {
+  const n = Math.round(Number(v));
+  return Number.isFinite(n) ? Math.min(100, Math.max(0, n)) : fallback;
+}
 
 export function normalizeWarnFrom(v: unknown): number {
   const n = Math.round(Number(v));
@@ -109,21 +114,27 @@ export function warnFromLabel(sec: number): string {
 
 export interface TimerAlert {
   key: string;
-  kind: 'tick' | 'tick-urgent';
+  kind: 'tick';
+  /** 울려야 할 정확한 시각(epoch ms) — 화면의 남은 초가 바뀌는 순간 */
+  at: number;
 }
 
+/** 메인 프로세스 감시 주기(250ms)·화면 전달 지연을 흡수하도록 이만큼 미리 알려 정확한 시각에 예약 재생 */
+export const ALERT_LOOKAHEAD_MS = 400;
+
 /**
- * 지금 울려야 할 종료 예고음.
- * 끝나기 warnFrom초 전부터(타이머가 그보다 짧으면 처음부터) 종료 때까지 남은 초가 바뀔 때마다 한 번씩 울린다.
- * 마지막 10초는 더 높은 소리. 일시정지 중에는 울리지 않는다.
- * 감지가 늦어(절전 등) 지나간 초는 몰아서 울리지 않고 현재 초만 울린다.
+ * 지금(또는 lookaheadMs 안에) 울려야 할 종료 예고음.
+ * 끝나기 warnFrom초 전부터(타이머가 그보다 짧으면 처음부터) 종료 때까지, 화면의 남은 초가 바뀌는 순간마다 같은 소리로 한 번씩.
+ * 일시정지 중에는 울리지 않는다. 감지가 늦어(절전 등) 지나간 초는 몰아서 울리지 않고 현재 초만 울린다.
  */
-export function pendingAlerts(t: TimerState, now: number): { play: TimerAlert[] } {
+export function pendingAlerts(t: TimerState, now: number, lookaheadMs = 0): { play: TimerAlert[] } {
   if (t.status !== 'running' || !t.warnFrom) return { play: [] };
-  const rem = t.endAt - now;
+  const rem = t.endAt - now - Math.max(0, lookaheadMs);
   if (rem <= 0 || rem > t.warnFrom * 1000) return { play: [] };
-  const sec = Math.ceil(rem / 1000); // 화면에 보이는 남은 초
+  const sec = Math.ceil(rem / 1000); // (lookahead 뒤) 화면에 보일 남은 초
   const key = 's' + sec;
   if (t.alerted.includes(key)) return { play: [] };
-  return { play: [{ key, kind: sec <= URGENT_SEC ? 'tick-urgent' : 'tick' }] };
+  // 이 초가 화면에 나타나는 순간. 타이머 시작 직후처럼 이미 지난 경우는 지금
+  const at = Math.max(now, Math.min(t.endAt - sec * 1000, now + Math.max(0, lookaheadMs)));
+  return { play: [{ key, kind: 'tick', at }] };
 }

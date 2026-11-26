@@ -140,6 +140,8 @@ export interface Schedule {
   displayMode: TimerDisplayMode;
   /** 종료 예고음: 끝나기 몇 초 전부터 종료 때까지 1초마다 울릴지 (0 = 없음) */
   warnFrom?: number;
+  /** 종료 예고음 크기 0~100 (없으면 80) */
+  warnVolume?: number;
   createdAt: number;
   /** 이 시각 이전의 발생은 실행·놓침 판정에서 제외 (생성·수정·재활성화 시각) */
   activeSince?: number;
@@ -180,6 +182,8 @@ export interface Settings {
   timerVolume: number;
   timerDisplayMode: TimerDisplayMode;
   timerWarnFrom: number;
+  timerWarnVolume: number; // 종료 예고음 크기 0~100
+  timerEndRepeat: boolean; // 종료 후 끌 때까지 알림음을 다시 울림
   timerActivity: string;
   lastTimerSec: number;
 }
@@ -294,6 +298,7 @@ export interface TimerState {
   scheduleId?: string;
   shown: boolean; // 학생 화면에 타이머 표시 중인지
   warnFrom: number; // 끝나기 몇 초 전부터 예고음 (0 = 없음)
+  warnVolume: number; // 예고음 크기 0~100
   alerted: string[]; // 이미 울린 예고음 (같은 초에 두 번 울리지 않게)
   finishedAt?: number;
   runId: string; // 타이머 실행마다 새로 발급 (알림음 1회 재생 보장)

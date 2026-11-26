@@ -596,12 +596,22 @@ await check('함께 보기: 두세 줄 문구가 타이머 위 오른쪽 빈 곳
 await check('종료 예고음: 6초 타이머 · 10초 전부터 → 1초마다 예고음 후 종료 알림음 1번', async () => {
   const before = await app.evaluate(() => globalThis.__ct.soundLog.length);
   const beforeR = await teacher.evaluate(() => (window.__soundPlays || []).length);
-  await dispatch(app, { type: 'timer/start', durationSec: 6, activity: '', sound: 'bell', volume: 40, mode: 'split', warnFrom: 10 });
+  await dispatch(app, { type: 'timer/start', durationSec: 6, activity: '', sound: 'bell', volume: 40, mode: 'split', warnFrom: 10, warnVolume: 90 });
+  const endAt = await app.evaluate(() => globalThis.__ct.ctl.rt.timer.endAt);
+  const sw = await until(() => studentWin(app));
   await sleep(7500);
-  const log = await app.evaluate((_e, n) => globalThis.__ct.soundLog.slice(n).map((x) => x.sound), before);
-  const ticks = log.filter((x) => x.startsWith('tick'));
-  assert(ticks.length === 6 && ticks.every((x) => x === 'tick-urgent'), '예고음 ' + log.join(','));
+  const entries = await app.evaluate((_e, n) => globalThis.__ct.soundLog.slice(n), before);
+  const log = entries.map((x) => x.sound);
+  const ticks = entries.filter((x) => x.sound === 'tick');
+  assert(ticks.length === 6 && log.every((x) => x === 'tick' || x === 'bell'), '예고음 ' + log.join(','));
+  assert(ticks.every((x) => x.volume === 90), '예고음 크기 ' + ticks.map((x) => x.volume).join(','));
+  // 첫 소리(시작 직후) 뒤로는 화면의 초가 바뀌는 순간(정확히 1초 간격)에 맞춰 예약, 마지막 예고음 1초 뒤 종료 알림음
+  const dues = entries.map((x) => x.due - endAt);
+  assert(JSON.stringify(dues.slice(1)) === JSON.stringify([-5000, -4000, -3000, -2000, -1000, 0]), '예약 시각 ' + JSON.stringify(dues));
   assert(log.filter((x) => x === 'bell').length === 1 && log[log.length - 1] === 'bell', '종료 알림음 ' + log.join(','));
+  // 끝난 화면은 닫을 때까지 유지
+  assert((await sw.getAttribute('[data-testid=timer-panel]', 'data-status')) === 'finished', '끝난 화면이 사라짐');
+  assert(await teacher.isVisible('[data-testid=timer-finished-banner]'), '교사 화면 종료 알림 띠가 없음');
   const played = (await teacher.evaluate(() => (window.__soundPlays || []).length)) - beforeR;
   assert(played === 7, '교사 화면에서 재생된 소리 ' + played);
   await dispatch(app, { type: 'timer/close' });

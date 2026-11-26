@@ -411,7 +411,7 @@ function init(): void {
     hideStudent: () => student.hide(),
     applyTopmost: (on) => student.applyTopmost(on),
     playSound: (p) => {
-      soundLog.push({ ...p, at: Date.now() });
+      soundLog.push({ ...p, due: p.at, at: Date.now() });
       teacherWin?.webContents.send('sound:play', p);
     },
     notify: (title, body) => {
@@ -531,7 +531,7 @@ function init(): void {
   if (isE2E) (globalThis as any).__ct = { ctl, student, get teacherWin() { return teacherWin; }, soundLog, store, updater, widget };
 }
 
-const soundLog: { runId: string; sound: string; volume: number; at: number }[] = [];
+const soundLog: { runId: string; sound: string; volume: number; at: number; due?: number }[] = [];
 
 app.on('before-quit', () => {
   quitting = true;

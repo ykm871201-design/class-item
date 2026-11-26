@@ -26,6 +26,7 @@ function blank(now: number): Schedule {
     volume: 70,
     displayMode: 'split',
     warnFrom: 0,
+    warnVolume: 80,
     createdAt: now,
   };
 }
@@ -238,7 +239,7 @@ function Editor({ s, setS, err, onSave, onCancel }: { s: Schedule; setS: (s: Sch
       </div>
       <ModePreviewPicker mode={s.displayMode} onChange={(m) => set({ displayMode: m })} board={board} durationSec={s.durationSec} activity={s.activity} />
       <SoundPicker sound={s.sound} volume={s.volume} onChange={(sound, volume) => set({ sound, volume })} />
-      <WarningPicker warnFrom={s.warnFrom ?? 0} volume={s.volume} durationSec={s.durationSec} onChange={(warnFrom) => set({ warnFrom })} />
+      <WarningPicker warnFrom={s.warnFrom ?? 0} warnVolume={s.warnVolume ?? 80} durationSec={s.durationSec} onChange={(warnFrom) => set({ warnFrom })} onVolume={(warnVolume) => set({ warnVolume })} />
       {err && <div className="alert err">{err}</div>}
       <div className="row" style={{ marginTop: 12 }}>
         <button className="btn big primary" onClick={onSave} data-testid="sch-save">
